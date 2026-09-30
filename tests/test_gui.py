@@ -27,6 +27,7 @@ class TestRzrOpenAudGUI(unittest.TestCase):
     def test_window_components(self):
         # Create an app instance and window without calling run()
         app = RzrOpenAudApp()
+        app.register(None)
         win = RzrOpenAudWindow(application=app)
 
         # Check title and default dimensions
@@ -59,6 +60,44 @@ class TestRzrOpenAudGUI(unittest.TestCase):
         self.assertGreaterEqual(model.get_n_items(), 7)
 
         # Clean up window
+        win.destroy()
+
+    def test_gui_controls_interaction(self):
+        """Test user interaction events on all Audio Control components."""
+        app = Adw.Application(application_id="io.github.rzropenaud.test.interact")
+        app.register(None)
+        win = RzrOpenAudWindow(application=app)
+
+        # 1. Sidetone scale adjustment
+        win.sidetone_scale.set_value(75.0)
+        self.assertEqual(win.sidetone_scale.get_value(), 75.0)
+        # Directly invoke debounced callback
+        win._apply_sidetone(75)
+
+        # 2. Mic volume scale adjustment
+        win.mic_vol_scale.set_value(90.0)
+        self.assertEqual(win.mic_vol_scale.get_value(), 90.0)
+        win._apply_mic_volume(90)
+
+        # 3. Mic boost toggle
+        win.mic_boost_switch.set_active(True)
+        self.assertTrue(win.mic_boost_switch.get_active())
+        win._on_mic_boost_state_set(win.mic_boost_switch, True)
+
+        # 4. EQ combo preset selection
+        win.eq_combo_row.set_selected(1)  # Game
+        self.assertEqual(win.eq_combo_row.get_selected(), 1)
+        win._on_eq_preset_selected(win.eq_combo_row, None)
+
+        # 5. Bass boost and voice clarity
+        win.bass_boost_scale.set_value(40.0)
+        win._apply_bass_boost(40)
+        win.voice_clarity_scale.set_value(30.0)
+        win._apply_voice_clarity(30)
+
+        # 6. Banner retry button
+        win._on_banner_button_clicked(win.banner)
+
         win.destroy()
 
     def test_desktop_file_exists(self):
