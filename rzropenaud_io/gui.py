@@ -177,7 +177,7 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
         # --- Audio Enhancements Group ---
         self.enhancements_group = Adw.PreferencesGroup(
             title="Audio Enhancements",
-            description="Hardware & EasyEffects digital signal processing filters",
+            description="Hardware and EasyEffects digital signal processing filters",
         )
         self.pref_page.add(self.enhancements_group)
 
