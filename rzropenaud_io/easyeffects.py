@@ -171,7 +171,7 @@ class EasyEffectsBridge:
                 logger.debug("Could not start easyeffects service: %s", e)
 
     def install_all_presets(self) -> None:
-        """Write all Razer predefined presets into EasyEffects preset directory."""
+        """Write all Razer predefined presets and device autoload rules."""
         try:
             self.output_dir.mkdir(parents=True, exist_ok=True)
             for name, bands in EQ_PRESETS.items():
@@ -180,8 +180,67 @@ class EasyEffectsBridge:
                 file_path = self.output_dir / f"{preset_name}.json"
                 with open(file_path, "w", encoding="utf-8") as f:
                     json.dump(payload, f, indent=2)
+
+            # Create clean passthrough preset (0 active DSP plugins)
+            clean_payload = {"output": {"blocklist": [], "plugins_order": []}}
+            with open(self.output_dir / "Clean-Passthrough.json", "w", encoding="utf-8") as f:
+                json.dump(clean_payload, f, indent=2)
+
+            # Configure device-specific autoloading so speakers/HDMI never inherit headset effects
+            self._setup_autoloading()
         except Exception as e:
             logger.debug("Failed to write EasyEffects presets: %s", e)
+
+    def _setup_autoloading(self) -> None:
+        """Configure EasyEffects autoloading rules so only Razer headset gets enhancements."""
+        try:
+            autoload_dir = self.output_dir.parent / "autoload" / "output"
+            autoload_dir.mkdir(parents=True, exist_ok=True)
+
+            # 1. Razer headset -> Razer-Active
+            razer_rule = {
+                "device": "alsa_output.usb-Razer_Razer_USB_Sound_Card_00000000-00.analog-stereo",
+                "device-description": "Razer USB Sound Card Analog Stereo",
+                "device-profile": "Speakers",
+                "preset-name": PRESET_NAME_ACTIVE,
+            }
+            with open(
+                autoload_dir / "alsa_output.usb-Razer_Razer_USB_Sound_Card_00000000-00.analog-stereo:Speakers.json",
+                "w",
+                encoding="utf-8",
+            ) as f:
+                json.dump(razer_rule, f, indent=2)
+
+            # 2. Built-in speakers / motherboard audio -> Clean-Passthrough
+            for route in ["Speakers", "Line Out", "Headphones"]:
+                rule = {
+                    "device": "alsa_output.pci-0000_00_1f.3.analog-stereo",
+                    "device-description": "Built-in Audio Analog Stereo",
+                    "device-profile": route,
+                    "preset-name": "Clean-Passthrough",
+                }
+                with open(
+                    autoload_dir / f"alsa_output.pci-0000_00_1f.3.analog-stereo:{route}.json",
+                    "w",
+                    encoding="utf-8",
+                ) as f:
+                    json.dump(rule, f, indent=2)
+
+            # 3. HDMI monitor audio -> Clean-Passthrough
+            hdmi_rule = {
+                "device": "alsa_output.pci-0000_01_00.1.hdmi-stereo",
+                "device-description": "AD102 High Definition Audio Controller Digital Stereo (HDMI)",
+                "device-profile": "Digital Stereo (HDMI)",
+                "preset-name": "Clean-Passthrough",
+            }
+            with open(
+                autoload_dir / "alsa_output.pci-0000_01_00.1.hdmi-stereo:Digital Stereo (HDMI).json",
+                "w",
+                encoding="utf-8",
+            ) as f:
+                json.dump(hdmi_rule, f, indent=2)
+        except Exception as e:
+            logger.debug("Failed to setup autoload rules: %s", e)
 
     def apply_state(
         self,
