@@ -60,6 +60,11 @@ class TestRzrOpenAudGUI(unittest.TestCase):
         model = win.eq_combo_row.get_model()
         self.assertGreaterEqual(model.get_n_items(), 7)
 
+        # Verify Device Status rows
+        self.assertIsNotNone(win.fw_row)
+        self.assertIsNotNone(win.sn_row)
+        self.assertIsNotNone(win.edit_sn_btn)
+
         # Clean up window
         win.destroy()
 
@@ -101,6 +106,12 @@ class TestRzrOpenAudGUI(unittest.TestCase):
 
         # 6. Banner retry button
         win._on_banner_button_clicked(win.banner)
+
+        # 7. Serial configuration dialog response handling
+        win._handle_serial_dialog_response("save", "PM99887766")
+        self.assertIn("PM99887766", win.sn_row.get_subtitle())
+        win._handle_serial_dialog_response("reset", "")
+        self.assertIn("00000000", win.sn_row.get_subtitle())
 
         win.destroy()
 

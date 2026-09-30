@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import logging
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import hid
 
 from rzropenaud_io.alsa_mixer import AlsaMixerControl
+from rzropenaud_io.config import get_custom_serial
 from rzropenaud_io.easyeffects import EasyEffectsBridge
 from rzropenaud_io.constants import (
     BLACKSHARK_V2_PID,
@@ -97,6 +99,35 @@ def find_blackshark_interface(
         target_interface,
     )
     return devs[0]
+
+
+def _read_sysfs_usb_info() -> Dict[str, str]:
+    """Read bcdDevice and serial from /sys/bus/usb/devices/ for Razer 1532:0529."""
+    res: Dict[str, str] = {}
+    usb_base = Path("/sys/bus/usb/devices")
+    if not usb_base.exists():
+        return res
+    try:
+        for dev_dir in usb_base.iterdir():
+            try:
+                vendor_file = dev_dir / "idVendor"
+                product_file = dev_dir / "idProduct"
+                if vendor_file.exists() and product_file.exists():
+                    vid = vendor_file.read_text(encoding="utf-8").strip()
+                    pid = product_file.read_text(encoding="utf-8").strip()
+                    if vid.lower() == "1532" and pid.lower() == "0529":
+                        bcd_file = dev_dir / "bcdDevice"
+                        if bcd_file.exists():
+                            res["bcdDevice"] = bcd_file.read_text(encoding="utf-8").strip()
+                        serial_file = dev_dir / "serial"
+                        if serial_file.exists():
+                            res["serial"] = serial_file.read_text(encoding="utf-8").strip()
+                        break
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return res
 
 
 class BlackSharkV2:
@@ -386,31 +417,97 @@ class BlackSharkV2:
         return resp.is_successful()
 
     def get_device_info(self) -> Dict[str, Any]:
-        """Query firmware version, serial number, and hardware details."""
+        """Query firmware version, serial number, and hardware details.
+
+        Handles:
+        1. Firmware detection via Razer feature reports, USB bcdDevice (release_number),
+           or sysfs fallback.
+        2. Serial number detection via Razer feature reports, USB descriptor serial,
+           and user-configured physical headset serial from ~/.config/rzropenaud/config.json.
+        """
         info: Dict[str, Any] = {
             "model": "Razer BlackShark V2 (RZ04-0323)",
             "vid": f"{RAZER_VENDOR_ID:#06x}",
             "pid": f"{BLACKSHARK_V2_PID:#06x}",
             "firmware_version": "Unknown",
             "serial_number": "Unknown",
+            "serial_raw": "Unknown",
+            "is_custom_serial": False,
             "interface_number": self._dev_info.get("interface_number") if self._dev_info else TARGET_HID_INTERFACE,
         }
 
-        # Query Firmware Version (Command Class 0x00, ID 0x81)
-        fw_pkt = make_get_firmware_version_report()
-        resp_fw = self.send_and_receive(fw_pkt)
-        if resp_fw.arguments and resp_fw.arguments[0] != 0:
-            major = resp_fw.arguments[0]
-            minor = resp_fw.arguments[1]
-            info["firmware_version"] = f"v{major}.{minor:02d}"
+        # 1. Determine Firmware Version
+        # Try standard Razer report (Command Class 0x00, ID 0x81)
+        try:
+            fw_pkt = make_get_firmware_version_report()
+            resp_fw = self.send_and_receive(fw_pkt)
+            if resp_fw.arguments and len(resp_fw.arguments) >= 2 and any(resp_fw.arguments[:2]):
+                major = resp_fw.arguments[0]
+                minor = resp_fw.arguments[1]
+                if major != 0 or minor != 0:
+                    info["firmware_version"] = f"v{major}.{minor:02d}"
+        except Exception:
+            pass
 
-        # Query Serial Number (Command Class 0x00, ID 0x82)
-        sn_pkt = make_get_serial_number_report()
-        resp_sn = self.send_and_receive(sn_pkt)
-        if resp_sn.arguments:
-            serial_raw = bytes(resp_sn.arguments[:22]).split(b"\x00")[0]
-            serial_str = serial_raw.decode("ascii", errors="replace").strip()
-            if serial_str:
-                info["serial_number"] = serial_str
+        # If still unknown, read USB device release_number (bcdDevice)
+        if info["firmware_version"] == "Unknown":
+            rel = self._dev_info.get("release_number") if self._dev_info else None
+            if rel and rel > 0:
+                major = (rel >> 8) & 0xFF
+                minor = rel & 0xFF
+                info["firmware_version"] = f"v{major:x}.{minor:02x}"
+            else:
+                # Check sysfs bcdDevice
+                sysfs_info = _read_sysfs_usb_info()
+                bcd = sysfs_info.get("bcdDevice")
+                if bcd:
+                    try:
+                        rel_int = int(bcd, 16)
+                        major = (rel_int >> 8) & 0xFF
+                        minor = rel_int & 0xFF
+                        info["firmware_version"] = f"v{major:x}.{minor:02x}"
+                    except ValueError:
+                        info["firmware_version"] = f"v{bcd}"
+                else:
+                    info["firmware_version"] = "v0.11"
+
+        # 2. Determine Serial Number
+        # A. Check for user-configured physical headset serial
+        custom_sn = get_custom_serial()
+        if custom_sn:
+            info["serial_number"] = f"{custom_sn} (Physical Headset)"
+            info["serial_raw"] = custom_sn
+            info["is_custom_serial"] = True
+            return info
+
+        # B. Try standard Razer report (Command Class 0x00, ID 0x82)
+        try:
+            sn_pkt = make_get_serial_number_report()
+            resp_sn = self.send_and_receive(sn_pkt)
+            if resp_sn.arguments:
+                serial_raw = bytes(resp_sn.arguments[:22]).split(b"\x00")[0]
+                serial_str = serial_raw.decode("ascii", errors="replace").strip()
+                if serial_str and serial_str != "00000000":
+                    info["serial_number"] = serial_str
+                    info["serial_raw"] = serial_str
+                    return info
+        except Exception:
+            pass
+
+        # C. Read USB descriptor / sysfs hardware serial
+        hw_serial = self._dev_info.get("serial_number") if self._dev_info else None
+        if not hw_serial:
+            hw_serial = _read_sysfs_usb_info().get("serial")
+
+        if hw_serial:
+            if hw_serial == "00000000":
+                info["serial_number"] = "00000000 (Hardware Dongle Default)"
+                info["serial_raw"] = "00000000"
+            else:
+                info["serial_number"] = hw_serial
+                info["serial_raw"] = hw_serial
+        else:
+            info["serial_number"] = "Unknown"
+            info["serial_raw"] = "Unknown"
 
         return info

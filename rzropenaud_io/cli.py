@@ -10,6 +10,7 @@ import logging
 import sys
 from typing import List, Optional
 
+from rzropenaud_io.config import clear_custom_serial, set_custom_serial
 from rzropenaud_io.constants import EQ_BAND_LABELS, EQ_PRESETS
 from rzropenaud_io.device import (
     BlackSharkV2,
@@ -83,6 +84,19 @@ Examples:
         help="Set voice clarity / ambient noise reduction (0 to 100 percent).",
     )
 
+    # Serial Number Configuration
+    parser.add_argument(
+        "--set-serial",
+        type=str,
+        metavar="SERIAL",
+        help="Configure the physical headset serial number (found under left ear cushion).",
+    )
+    parser.add_argument(
+        "--clear-serial",
+        action="store_true",
+        help="Clear user-configured headset serial number, reverting to hardware dongle default.",
+    )
+
     # Query & Device Info
     parser.add_argument(
         "-s", "--status", "--info",
@@ -137,12 +151,39 @@ def main(argv: Optional[List[str]] = None) -> int:
         args.mic_boost is not None,
         args.bass_boost is not None,
         args.voice_clarity is not None,
+        args.set_serial is not None,
+        args.clear_serial,
         args.status,
     ])
 
     if not has_actions:
         parser.print_help()
         return 0
+
+    # Handle serial configuration
+    if args.set_serial is not None or args.clear_serial:
+        if args.clear_serial or (args.set_serial and args.set_serial.strip().lower() in ("", "default", "none")):
+            clear_custom_serial()
+            print("✓ Reset headset serial number to hardware default (00000000).")
+            notifier.send("Razer BlackShark V2", "Serial number reset to hardware default.")
+        else:
+            sn = args.set_serial.strip()
+            set_custom_serial(sn)
+            print(f"✓ Saved headset physical serial number: {sn}")
+            notifier.send("Razer BlackShark V2", f"Headset serial set to {sn}")
+
+        # Check if there are other hardware actions to perform
+        hw_actions = any([
+            args.mic_volume is not None,
+            args.sidetone is not None,
+            args.eq is not None,
+            args.mic_boost is not None,
+            args.bass_boost is not None,
+            args.voice_clarity is not None,
+            args.status,
+        ])
+        if not hw_actions:
+            return 0
 
     try:
         with BlackSharkV2(verbose=args.verbose) as dev:

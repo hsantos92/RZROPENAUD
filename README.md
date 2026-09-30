@@ -105,12 +105,13 @@ update-desktop-database ~/.local/share/applications/
 ```
 usage: rzropenaud-io [-h] [--mic-volume 0-100] [--sidetone 0-100] [--eq PRESET|BANDS]
                      [--mic-boost {on,off}] [--bass-boost 0-100] [--voice-clarity 0-100]
+                     [--set-serial SERIAL] [--clear-serial]
                      [-s] [--notify | --no-notify] [--direct] [-v]
 ```
 
 ### Examples
 
-#### Query Device Information
+#### Query Device Information & Status
 ```bash
 rzropenaud-io --status
 ```
@@ -122,10 +123,26 @@ Outputs:
 Device:           Razer BlackShark V2 (RZ04-0323)
 USB ID:           0x1532:0x0529
 Interface:        3
-Firmware:         v1.01
-Serial Number:    PM2038H0740001
+Firmware:         v0.11
+Serial Number:    00000000 (Hardware Dongle Default)
 ==================================================
 ```
+
+#### Configure Physical Headset Serial Number
+The BlackShark V2 connects to the USB Sound Card dongle via an analog 3.5mm TRRS jack; its physical serial number is printed on a sticker underneath the left ear cushion. You can save your physical headset serial number persistently:
+
+```bash
+# Save headset serial number
+rzropenaud-io --set-serial PM2047H1234567
+
+# Check status again
+rzropenaud-io --status
+
+# Clear and restore hardware dongle default (00000000)
+rzropenaud-io --clear-serial
+```
+
+*(Note: You can also click the ✎ Edit button next to the Serial Number row in the GNOME GUI to view, set, or reset your headset's serial number.)*
 
 #### Adjust Hardware Sidetone (Mic Monitoring)
 ```bash

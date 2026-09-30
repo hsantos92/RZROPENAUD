@@ -14,6 +14,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, GLib, Gtk
 
+from rzropenaud_io.config import clear_custom_serial, get_custom_serial, set_custom_serial
 from rzropenaud_io.constants import (
     BLACKSHARK_V2_PID,
     DEVICE_MODEL_NAME,
@@ -96,11 +97,26 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
         self.model_row.add_suffix(self.status_badge)
 
         self.fw_row = Adw.ActionRow(
-            title="Firmware and Serial",
+            title="Firmware Revision",
             subtitle="Unknown",
         )
         self.fw_row.add_prefix(Gtk.Image.new_from_icon_name("dialog-information-symbolic"))
         self.info_group.add(self.fw_row)
+
+        self.sn_row = Adw.ActionRow(
+            title="Headset Serial Number",
+            subtitle="Unknown",
+        )
+        self.sn_row.add_prefix(Gtk.Image.new_from_icon_name("fingerprint-symbolic"))
+
+        self.edit_sn_btn = Gtk.Button(icon_name="document-edit-symbolic")
+        self.edit_sn_btn.set_tooltip_text("Set physical headset serial number (found under left ear cushion)")
+        self.edit_sn_btn.set_valign(Gtk.Align.CENTER)
+        self.edit_sn_btn.add_css_class("flat")
+        self.edit_sn_btn.connect("clicked", self._on_edit_serial_clicked)
+        self.sn_row.add_suffix(self.edit_sn_btn)
+        self.sn_row.set_activatable_widget(self.edit_sn_btn)
+        self.info_group.add(self.sn_row)
 
         # --- Audio Controls Group ---
         self.audio_group = Adw.PreferencesGroup(
@@ -251,14 +267,15 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
 
             # Query hardware details
             self.device_info = dev.get_device_info()
-            fw = self.device_info.get("firmware_version", "v1.00")
-            sn = self.device_info.get("serial_number", "Connected")
+            fw = self.device_info.get("firmware_version", "v0.11")
+            sn = self.device_info.get("serial_number", "00000000")
 
             # Update UI indicators
             self.status_badge.set_label("Connected (0x1532:0x0529)")
             self.status_badge.remove_css_class("dim-label")
             self.status_badge.add_css_class("success")
-            self.fw_row.set_subtitle(f"FW: {fw}  |  S/N: {sn}")
+            self.fw_row.set_subtitle(fw)
+            self.sn_row.set_subtitle(sn)
 
             # Dismiss error banner
             self.banner.set_revealed(False)
@@ -287,6 +304,8 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
             self.status_badge.set_label("Permission Denied")
             self.status_badge.remove_css_class("success")
             self.status_badge.add_css_class("error")
+            self.fw_row.set_subtitle("Permission Denied")
+            self.sn_row.set_subtitle("Permission Denied")
 
             self.banner.set_title(
                 "Permission Denied: Run 'sudo cp 99-razer.rules /etc/udev/rules.d/' "
@@ -300,6 +319,9 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
             self.status_badge.set_label("Not Found")
             self.status_badge.remove_css_class("success")
             self.status_badge.add_css_class("dim-label")
+            self.fw_row.set_subtitle("Not Detected")
+            custom_sn = get_custom_serial()
+            self.sn_row.set_subtitle(f"{custom_sn} (Saved)" if custom_sn else "Not Detected")
 
             self.banner.set_title("Razer BlackShark V2 USB Sound Card not detected. Please check USB cable.")
             self.banner.set_button_label("Scan Again")
@@ -308,10 +330,100 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
 
         except RazerDeviceError as e:
             self.status_badge.set_label("Device Error")
+            self.fw_row.set_subtitle("Device Error")
+            self.sn_row.set_subtitle("Device Error")
             self.banner.set_title(f"Hardware communication error: {e}")
             self.banner.set_button_label("Retry")
             self.banner.set_revealed(True)
             self._set_controls_sensitive(False)
+
+    def _on_edit_serial_clicked(self, _btn: Gtk.Button) -> None:
+        """Open a dialog to configure or reset the physical headset serial number."""
+        current_custom = get_custom_serial()
+
+        entry = Gtk.Entry()
+        entry.set_placeholder_text("e.g. PM2047H1234567")
+        if current_custom:
+            entry.set_text(current_custom)
+
+        body_text = (
+            "The Razer USB Sound Card reports default ID '00000000'.\n\n"
+            "Enter the physical serial number printed on the sticker "
+            "under your headset's left ear cushion:"
+        )
+
+        if hasattr(Adw, "AlertDialog"):
+            dialog = Adw.AlertDialog.new("Headset Serial Number", body_text)
+            dialog.set_extra_child(entry)
+            dialog.add_response("cancel", "Cancel")
+            if current_custom:
+                dialog.add_response("reset", "Reset to Default")
+                dialog.set_response_appearance("reset", Adw.ResponseAppearance.DESTRUCTIVE)
+            dialog.add_response("save", "Save")
+            dialog.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
+            dialog.set_default_response("save")
+            dialog.set_close_response("cancel")
+
+            def _on_alert_response(d: Any, result: Any) -> None:
+                try:
+                    resp = d.choose_finish(result)
+                except Exception:
+                    return
+                self._handle_serial_dialog_response(resp, entry.get_text())
+
+            dialog.choose(self, None, _on_alert_response)
+        else:
+            dialog = Adw.MessageDialog(heading="Headset Serial Number", body=body_text)
+            dialog.set_transient_for(self)
+            dialog.set_modal(True)
+            dialog.set_extra_child(entry)
+            dialog.add_response("cancel", "Cancel")
+            if current_custom:
+                dialog.add_response("reset", "Reset to Default")
+                dialog.set_response_appearance("reset", Adw.ResponseAppearance.DESTRUCTIVE)
+            dialog.add_response("save", "Save")
+            dialog.set_response_appearance("save", Adw.ResponseAppearance.SUGGESTED)
+            dialog.set_default_response("save")
+            dialog.set_close_response("cancel")
+
+            def _on_msg_response(d: Any, resp: str) -> None:
+                self._handle_serial_dialog_response(resp, entry.get_text())
+
+            dialog.connect("response", _on_msg_response)
+            dialog.present()
+
+    def _handle_serial_dialog_response(self, response: str, text: str) -> None:
+        """Handle response from serial configuration dialog."""
+        if response == "save":
+            val = text.strip()
+            if val:
+                set_custom_serial(val)
+                self.notifier.send("RZROPENAUD-IO", f"Headset serial set to {val}")
+            else:
+                clear_custom_serial()
+            self._refresh_device_info()
+        elif response == "reset":
+            clear_custom_serial()
+            self.notifier.send("RZROPENAUD-IO", "Headset serial reset to hardware default.")
+            self._refresh_device_info()
+
+    def _refresh_device_info(self) -> None:
+        """Re-query device info and update GUI labels."""
+        if self.device is not None:
+            try:
+                self.device_info = self.device.get_device_info()
+                fw = self.device_info.get("firmware_version", "v0.11")
+                sn = self.device_info.get("serial_number", "00000000")
+                self.fw_row.set_subtitle(fw)
+                self.sn_row.set_subtitle(sn)
+            except Exception:
+                pass
+        else:
+            custom_sn = get_custom_serial()
+            if custom_sn:
+                self.sn_row.set_subtitle(f"{custom_sn} (Physical Headset)")
+            else:
+                self.sn_row.set_subtitle("Not Detected")
 
     def _set_controls_sensitive(self, sensitive: bool) -> None:
         """Enable or disable interactive widgets based on hardware connection."""
