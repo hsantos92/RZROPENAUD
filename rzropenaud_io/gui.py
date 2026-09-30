@@ -164,7 +164,7 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
         string_list = Gtk.StringList.new(self.preset_display_names)
         self.eq_combo_row = Adw.ComboRow(
             title="Equalizer Preset",
-            subtitle="10-band curve (Microphone hardware DSP + EasyEffects playback)",
+            subtitle="10-band headphone playback curve (Game, Music, Movie, etc.)",
             model=string_list,
         )
         self.eq_combo_row.add_prefix(Gtk.Image.new_from_icon_name("audio-speakers-symbolic"))
@@ -177,14 +177,14 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
         # --- Audio Enhancements Group ---
         self.enhancements_group = Adw.PreferencesGroup(
             title="Audio Enhancements",
-            description="Hardware and EasyEffects digital signal processing filters",
+            description="Dynamic DSP audio filters for headphone playback",
         )
         self.pref_page.add(self.enhancements_group)
 
         # Bass Boost Slider (0 - 100)
         self.bass_boost_row = Adw.ActionRow(
             title="Bass Boost",
-            subtitle="Dynamic low-frequency bass enhancement (EasyEffects PipeWire bridge)",
+            subtitle="Dynamic low-frequency bass enhancement for headphone playback",
         )
         self.bass_boost_row.add_prefix(Gtk.Image.new_from_icon_name("audio-volume-low-symbolic"))
 
@@ -397,11 +397,11 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
                     print(f"[GUI] EQ error: {e}", file=sys.stderr)
 
     def _on_bass_boost_value_changed(self, scale: Gtk.Scale) -> None:
-        """Handle bass boost slider change with 70ms debounce."""
+        """Handle bass boost slider change with 250ms debounce."""
         val = int(scale.get_value())
         if self._bass_boost_timer:
             GLib.source_remove(self._bass_boost_timer)
-        self._bass_boost_timer = GLib.timeout_add(70, self._apply_bass_boost, val)
+        self._bass_boost_timer = GLib.timeout_add(250, self._apply_bass_boost, val)
 
     def _apply_bass_boost(self, val: int) -> bool:
         self._bass_boost_timer = None

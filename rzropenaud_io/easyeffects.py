@@ -124,10 +124,14 @@ class EasyEffectsBridge:
         self.current_bands: List[int] = [0] * 10
         self.current_bass_boost: int = 0
         self._lock = threading.Lock()
+        self._reload_timer: Optional[threading.Timer] = None
+        self._is_reloading: bool = False
+        self._pending_reload: bool = False
 
         # Generate standard Razer presets if EasyEffects is available
         if self.is_installed():
             self.install_all_presets()
+            self.ensure_running()
 
     @staticmethod
     def is_installed() -> bool:
@@ -146,6 +150,19 @@ class EasyEffectsBridge:
         except Exception:
             return False
 
+    def ensure_running(self) -> None:
+        """Start EasyEffects in background service mode if not already running."""
+        if not self.is_running() and self.is_installed():
+            try:
+                subprocess.Popen(
+                    ["easyeffects", "--service-mode"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+            except Exception as e:
+                logger.debug("Could not start easyeffects service: %s", e)
+
     def install_all_presets(self) -> None:
         """Write all Razer predefined presets into EasyEffects preset directory."""
         try:
@@ -163,17 +180,21 @@ class EasyEffectsBridge:
         self,
         bands: Optional[List[int]] = None,
         bass_boost: Optional[int] = None,
-        async_load: bool = True,
+        delay_seconds: float = 0.25,
     ) -> bool:
-        """Update active preset and instruct EasyEffects to reload it.
+        """Update active preset and schedule a coalesced reload in EasyEffects.
+
+        Debouncing ensures that dragging sliders or changing values rapidly
+        does not hammer PipeWire or cause audio buffer starvation in players
+        like Spotify.
 
         Args:
             bands: Optional new 10-band gains list.
             bass_boost: Optional new bass boost percentage (0-100%).
-            async_load: If True, execute preset load in background thread.
+            delay_seconds: Delay before executing 'easyeffects -l' (default 250ms).
 
         Returns:
-            True if preset was written and load command dispatched.
+            True if preset was written and reload scheduled.
         """
         if not self.is_installed():
             return False
@@ -184,6 +205,12 @@ class EasyEffectsBridge:
             if bass_boost is not None:
                 self.current_bass_boost = int(bass_boost)
 
+            # Cancel any existing debounce timer so rapid changes coalesce
+            if self._reload_timer is not None:
+                self._reload_timer.cancel()
+                self._reload_timer = None
+
+            # Always write the updated preset JSON file immediately
             try:
                 self.output_dir.mkdir(parents=True, exist_ok=True)
                 payload = build_preset_payload(self.current_bands, self.current_bass_boost)
@@ -194,21 +221,45 @@ class EasyEffectsBridge:
                 logger.warning("Could not write EasyEffects active preset: %s", e)
                 return False
 
-        def _do_load() -> None:
+            if delay_seconds <= 0:
+                self._schedule_reload()
+            else:
+                self._reload_timer = threading.Timer(delay_seconds, self._schedule_reload)
+                self._reload_timer.daemon = True
+                self._reload_timer.start()
+
+        return True
+
+    def _schedule_reload(self) -> None:
+        """Trigger or queue a serialized preset reload."""
+        with self._lock:
+            self._reload_timer = None
+            if self._is_reloading:
+                self._pending_reload = True
+                return
+            self._is_reloading = True
+
+        threading.Thread(target=self._run_reload_worker, daemon=True).start()
+
+    def _run_reload_worker(self) -> None:
+        """Worker loop that ensures only one reload runs at a time."""
+        while True:
+            self.ensure_running()
             try:
                 subprocess.run(
                     ["easyeffects", "-l", PRESET_NAME_ACTIVE],
                     check=False,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
-                    timeout=2.0,
+                    timeout=3.0,
                 )
             except Exception as e:
                 logger.debug("easyeffects -l error: %s", e)
 
-        if async_load:
-            threading.Thread(target=_do_load, daemon=True).start()
-        else:
-            _do_load()
-
-        return True
+            with self._lock:
+                if self._pending_reload:
+                    self._pending_reload = False
+                    continue
+                else:
+                    self._is_reloading = False
+                    break
