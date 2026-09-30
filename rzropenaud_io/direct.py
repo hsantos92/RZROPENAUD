@@ -44,7 +44,12 @@ def make_direct_request_report(
 
     payload = bytearray(data)
     dlen = min(len(payload), 32)
-    buf[2] = dlen & 0xFF
+    # In Synapse captures, destination 0x4F/0x0F sets bits 7 & 6 (0xC0 | dlen)
+    if destination in (0x4F, 0x0F):
+        buf[2] = (0xC0 | dlen) & 0xFF
+    else:
+        buf[2] = dlen & 0xFF
+
     buf[3] = (address >> 8) & 0xFF
     buf[4] = address & 0xFF
     buf[5 : 5 + dlen] = payload[:dlen]
@@ -86,10 +91,20 @@ def make_direct_eq_packets(band_gains_db: List[int]) -> List[bytes]:
         packets.append(make_direct_request_report(KRAKEN_DEST_DIRECT_REG, addr + 1, [coeff_high]))
         # Read back / latch verification
         packets.append(make_direct_request_report(0x0F, DIRECT_ADDR_DSP_TRIGGER, [coeff_high]))
+        # Commit latch for this band
+        packets.append(make_direct_request_report(KRAKEN_DEST_DIRECT_REG, DIRECT_ADDR_DSP_TRIGGER, [0x93]))
+        packets.append(make_direct_request_report(0x0F, DIRECT_ADDR_DSP_TRIGGER, [0x93]))
 
-    # Commit / trigger DSP update
-    packets.append(make_direct_request_report(KRAKEN_DEST_DIRECT_REG, DIRECT_ADDR_DSP_TRIGGER, [0x93]))
-    packets.append(make_direct_request_report(0x0F, DIRECT_ADDR_DSP_TRIGGER, [0x93]))
+    # Final commit & apply sequence (from Synapse capture packets 145..161)
+    packets.append(make_direct_request_report(KRAKEN_DEST_WRITE_RAM, 0x0006, [0x72]))
+    packets.append(make_direct_request_report(KRAKEN_DEST_WRITE_RAM, 0x0002, [0x02]))
+    # Report ID 0x31
+    rep31 = bytearray(17)
+    rep31[0] = 0x31
+    rep31[1] = 0x06
+    packets.append(bytes(rep31))
+    packets.append(make_direct_request_report(KRAKEN_DEST_WRITE_RAM, 0x0006, [0xF2]))
+    packets.append(make_direct_request_report(KRAKEN_DEST_WRITE_RAM, 0x0002, [0x82]))
 
     return packets
 

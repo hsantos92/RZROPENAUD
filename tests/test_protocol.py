@@ -147,8 +147,8 @@ class TestRazerProtocol(unittest.TestCase):
         eq_pkts = make_direct_eq_packets([0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
         self.assertGreater(len(eq_pkts), 10)
         for pkt in eq_pkts:
-            self.assertEqual(len(pkt), 37)
-            self.assertEqual(pkt[0], 0x04)
+            self.assertIn(len(pkt), (17, 37))
+            self.assertIn(pkt[0], (0x04, 0x31))
 
         boost_pkt = make_direct_mic_boost_packet(True)
         self.assertEqual(len(boost_pkt), 37)

@@ -264,6 +264,25 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
             self.banner.set_revealed(False)
             self._set_controls_sensitive(True)
 
+            # Sync initial hardware values into GUI sliders
+            try:
+                _on, st_vol = dev.get_sidetone()
+                self.sidetone_scale.set_value(st_vol)
+            except Exception:
+                pass
+
+            try:
+                mv = dev.get_mic_volume()
+                self.mic_vol_scale.set_value(mv)
+            except Exception:
+                pass
+
+            try:
+                mb = dev.get_mic_boost()
+                self.mic_boost_switch.set_active(mb)
+            except Exception:
+                pass
+
         except RazerPermissionError:
             self.status_badge.set_label("Permission Denied")
             self.status_badge.remove_css_class("success")

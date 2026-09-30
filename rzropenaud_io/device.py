@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import hid
 
+from rzropenaud_io.alsa_mixer import AlsaMixerControl
 from rzropenaud_io.constants import (
     BLACKSHARK_V2_PID,
     CMD_ID_GET_FIRMWARE_VERSION,
@@ -104,6 +105,7 @@ class BlackSharkV2:
         self.verbose = verbose
         self._dev: Optional[hid.device] = None
         self._dev_info: Optional[Dict[str, Any]] = None
+        self.alsa = AlsaMixerControl("hw:Card")
 
     def __enter__(self) -> BlackSharkV2:
         self.open()
@@ -259,19 +261,20 @@ class BlackSharkV2:
         return last_response or RazerReport(status=RAZER_CMD_SUCCESSFUL)
 
     def send_direct_packet(self, packet: bytes) -> bool:
-        """Send a direct 37-byte DSP memory packet (Report ID 0x04)."""
+        """Send a direct 37-byte DSP memory packet (Report ID 0x04) via Output Report."""
         if self._dev is None:
             raise RazerDeviceError("Device is not open.")
 
         try:
             # Report ID is first byte of packet (0x04)
-            self._dev.send_feature_report(packet)
-            time.sleep(0.015)
+            # Write via Output Report
+            self._dev.write(packet)
+            time.sleep(0.01)
             return True
         except Exception:
             try:
-                self._dev.write(packet)
-                time.sleep(0.015)
+                self._dev.send_feature_report(packet)
+                time.sleep(0.01)
                 return True
             except Exception as e:
                 logger.debug("Direct packet failed: %s", e)
@@ -283,31 +286,25 @@ class BlackSharkV2:
 
     def set_mic_volume(self, volume: int) -> bool:
         """Set microphone input volume (0-100%)."""
+        self.alsa.set_mic_volume(volume)
         pkt = make_mic_volume_report(volume)
-        resp = self.send_and_receive(pkt)
-        return resp.is_successful()
+        self.send_and_receive(pkt)
+        return True
 
     def get_mic_volume(self) -> int:
         """Query current microphone volume."""
-        pkt = make_get_mic_volume_report()
-        resp = self.send_and_receive(pkt)
-        if resp.arguments:
-            return resp.arguments[0]
-        return 0
+        return self.alsa.get_mic_volume()
 
     def set_sidetone(self, volume: int, enabled: Optional[bool] = None) -> bool:
         """Set sidetone (mic monitoring) volume (0-100%) and enable toggle."""
+        self.alsa.set_sidetone(volume, enabled=enabled)
         pkt = make_sidetone_report(volume, enabled=enabled)
-        resp = self.send_and_receive(pkt)
-        return resp.is_successful()
+        self.send_and_receive(pkt)
+        return True
 
     def get_sidetone(self) -> Tuple[bool, int]:
         """Query sidetone state and volume."""
-        pkt = make_get_sidetone_report()
-        resp = self.send_and_receive(pkt)
-        enabled = bool(resp.arguments[0]) if len(resp.arguments) > 0 else False
-        volume = resp.arguments[1] if len(resp.arguments) > 1 else 0
-        return enabled, volume
+        return self.alsa.get_sidetone()
 
     def set_equalizer(
         self,
@@ -358,12 +355,17 @@ class BlackSharkV2:
 
     def set_mic_boost(self, enabled: bool, use_direct: bool = True) -> bool:
         """Toggle microphone boost."""
+        self.alsa.set_mic_boost(enabled)
         std_pkt = make_mic_boost_report(enabled)
         self.send_and_receive(std_pkt)
 
         if use_direct:
             self.send_direct_packet(make_direct_mic_boost_packet(enabled))
         return True
+
+    def get_mic_boost(self) -> bool:
+        """Get microphone boost status."""
+        return self.alsa.get_mic_boost()
 
     def set_bass_boost(self, level: int) -> bool:
         """Set bass boost level (0-100%)."""
