@@ -1,7 +1,10 @@
 """Unit tests for RZROPENAUD-IO GNOME GUI components."""
 
 import os
+import shutil
+import tempfile
 import unittest
+from pathlib import Path
 
 import gi
 
@@ -9,6 +12,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, Gtk
 
+import rzropenaud_io.config as config_mod
 from rzropenaud_io.gui import RzrOpenAudApp, RzrOpenAudWindow
 
 
@@ -19,6 +23,18 @@ class TestRzrOpenAudGUI(unittest.TestCase):
     def setUpClass(cls):
         # Initialize libadwaita
         Adw.init()
+
+    def setUp(self):
+        self.test_dir = tempfile.mkdtemp()
+        self.orig_config_dir = config_mod.CONFIG_DIR
+        self.orig_config_file = config_mod.CONFIG_FILE
+        config_mod.CONFIG_DIR = Path(self.test_dir)
+        config_mod.CONFIG_FILE = config_mod.CONFIG_DIR / "config.json"
+
+    def tearDown(self):
+        config_mod.CONFIG_DIR = self.orig_config_dir
+        config_mod.CONFIG_FILE = self.orig_config_file
+        shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def test_app_instantiation(self):
         app = RzrOpenAudApp()
