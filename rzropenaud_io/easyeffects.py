@@ -154,12 +154,19 @@ class EasyEffectsBridge:
         """Start EasyEffects in background service mode if not already running."""
         if not self.is_running() and self.is_installed():
             try:
-                subprocess.Popen(
-                    ["easyeffects", "--service-mode"],
+                res = subprocess.run(
+                    ["systemctl", "--user", "start", "easyeffects.service"],
+                    check=False,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
-                    start_new_session=True,
                 )
+                if res.returncode != 0:
+                    subprocess.Popen(
+                        ["easyeffects", "--service-mode"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        start_new_session=True,
+                    )
             except Exception as e:
                 logger.debug("Could not start easyeffects service: %s", e)
 
