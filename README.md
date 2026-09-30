@@ -1,8 +1,12 @@
 # RZROPENAUD-IO
 
-> Linux CLI utility for the **Razer BlackShark V2** (Model **RZ04-0323**, USB **VID: 1532, PID: 0529**) designed specifically for Arch Linux (GNOME).
+> [!WARNING]
+> **Disclaimer — Testing Purposes Only:**
+> This software is provided for testing and experimental purposes only. There is no guarantee that it will work out of the box with your specific hardware revision, firmware version, Linux distribution, or audio pipeline. However, it serves as a solid foundation and reference implementation for your own fork and customization.
 
-`RZROPENAUD-IO` provides direct control over the hardware DSP inside the Razer USB Sound Card without requiring Razer Synapse or Windows. It allows setting microphone volume, hardware sidetone (zero-latency mic monitoring), 10-band equalizer profiles, and hardware boost enhancements directly via USB HID.
+> Linux CLI utility and native GNOME (GTK4/libadwaita) desktop application for the **Razer BlackShark V2** (Model **RZ04-0323**, USB **VID: 1532, PID: 0529**) designed for Arch Linux (GNOME / PipeWire).
+
+`RZROPENAUD-IO` provides direct control over the hardware DSP inside the Razer USB Sound Card (microphone volume, zero-latency sidetone, and mic boost) and integrates with **EasyEffects** on PipeWire to provide real-time 10-band headphone playback equalization and dynamic bass enhancement.
 
 ---
 
@@ -22,10 +26,10 @@
 
 ### 1. Install System Dependencies
 
-On Arch Linux, install `python-hidapi` (for USB HID communication), `python-gobject`, `gtk4`, `libadwaita` (for the native GNOME GUI), and `libnotify` (for desktop alerts):
+On Arch Linux, install `python-hidapi` (for USB HID communication), `python-gobject`, `gtk4`, `libadwaita` (for the native GNOME GUI), `libnotify` (for desktop alerts), and `easyeffects` with DSP plugins (for headphone playback EQ and bass boost):
 
 ```bash
-sudo pacman -S python-gobject gtk4 libadwaita python-hidapi libnotify
+sudo pacman -S python-gobject gtk4 libadwaita python-hidapi libnotify easyeffects lsp-plugins-lv2 calf
 ```
 
 ### 2. Configure Udev Rules (Rootless Access)
