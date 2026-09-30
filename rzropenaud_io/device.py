@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import hid
 
 from rzropenaud_io.alsa_mixer import AlsaMixerControl
+from rzropenaud_io.easyeffects import EasyEffectsBridge
 from rzropenaud_io.constants import (
     BLACKSHARK_V2_PID,
     CMD_ID_GET_FIRMWARE_VERSION,
@@ -106,6 +107,7 @@ class BlackSharkV2:
         self._dev: Optional[hid.device] = None
         self._dev_info: Optional[Dict[str, Any]] = None
         self.alsa = AlsaMixerControl("hw:Card")
+        self.easyeffects = EasyEffectsBridge()
 
     def __enter__(self) -> BlackSharkV2:
         self.open()
@@ -341,11 +343,14 @@ class BlackSharkV2:
 
         preset_idx = list(EQ_PRESETS.keys()).index(preset_name) if preset_name in EQ_PRESETS else 0xFF
 
-        # 1. Send standard 90-byte Razer report
+        # 1. Update EasyEffects PipeWire playback equalizer
+        self.easyeffects.apply_state(bands=bands)
+
+        # 2. Send standard 90-byte Razer report (Microphone EQ)
         std_pkt = make_equalizer_report(preset_idx, bands)
         self.send_and_receive(std_pkt)
 
-        # 2. If direct mode is enabled, write DSP registers directly
+        # 3. If direct mode is enabled, write DSP registers directly
         if use_direct:
             dsp_pkts = make_direct_eq_packets(bands)
             for dpkt in dsp_pkts:
@@ -369,6 +374,7 @@ class BlackSharkV2:
 
     def set_bass_boost(self, level: int) -> bool:
         """Set bass boost level (0-100%)."""
+        self.easyeffects.apply_state(bass_boost=level)
         pkt = make_bass_boost_report(level)
         resp = self.send_and_receive(pkt)
         return resp.is_successful()

@@ -164,7 +164,7 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
         string_list = Gtk.StringList.new(self.preset_display_names)
         self.eq_combo_row = Adw.ComboRow(
             title="Equalizer Preset",
-            subtitle="10-band hardware DSP frequency curve",
+            subtitle="10-band curve (Microphone hardware DSP + EasyEffects playback)",
             model=string_list,
         )
         self.eq_combo_row.add_prefix(Gtk.Image.new_from_icon_name("audio-speakers-symbolic"))
@@ -177,14 +177,14 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
         # --- Audio Enhancements Group ---
         self.enhancements_group = Adw.PreferencesGroup(
             title="Audio Enhancements",
-            description="Hardware digital signal processing filters",
+            description="Hardware & EasyEffects digital signal processing filters",
         )
         self.pref_page.add(self.enhancements_group)
 
         # Bass Boost Slider (0 - 100)
         self.bass_boost_row = Adw.ActionRow(
             title="Bass Boost",
-            subtitle="Low-frequency dynamic bass enhancement",
+            subtitle="Dynamic low-frequency bass enhancement (EasyEffects PipeWire bridge)",
         )
         self.bass_boost_row.add_prefix(Gtk.Image.new_from_icon_name("audio-volume-low-symbolic"))
 
