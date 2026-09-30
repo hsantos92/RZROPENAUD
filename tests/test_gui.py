@@ -7,7 +7,7 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gtk
+from gi.repository import Adw, Gio, Gtk
 
 from rzropenaud_io.gui import RzrOpenAudApp, RzrOpenAudWindow
 
@@ -27,6 +27,7 @@ class TestRzrOpenAudGUI(unittest.TestCase):
     def test_window_components(self):
         # Create an app instance and window without calling run()
         app = RzrOpenAudApp()
+        app.set_flags(Gio.ApplicationFlags.NON_UNIQUE)
         app.register(None)
         win = RzrOpenAudWindow(application=app)
 
@@ -64,7 +65,10 @@ class TestRzrOpenAudGUI(unittest.TestCase):
 
     def test_gui_controls_interaction(self):
         """Test user interaction events on all Audio Control components."""
-        app = Adw.Application(application_id="io.github.rzropenaud.test.interact")
+        app = Adw.Application(
+            application_id="io.github.rzropenaud.test.interact",
+            flags=Gio.ApplicationFlags.NON_UNIQUE,
+        )
         app.register(None)
         win = RzrOpenAudWindow(application=app)
 
