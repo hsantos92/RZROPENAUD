@@ -22,10 +22,10 @@
 
 ### 1. Install System Dependencies
 
-On Arch Linux, install `python-hidapi` (for USB HID communication) and `libnotify` (for GNOME notifications):
+On Arch Linux, install `python-hidapi` (for USB HID communication), `python-gobject`, `gtk4`, `libadwaita` (for the native GNOME GUI), and `libnotify` (for desktop alerts):
 
 ```bash
-sudo pacman -S python-hidapi libnotify
+sudo pacman -S python-gobject gtk4 libadwaita python-hidapi libnotify
 ```
 
 ### 2. Configure Udev Rules (Rootless Access)
@@ -64,6 +64,34 @@ pip install -e .
 #### Option B: Run directly via executable script
 ```bash
 ./bin/rzropenaud-io --help
+```
+
+---
+
+## Native GNOME GUI (GTK4 / Libadwaita)
+
+`RZROPENAUD-IO` includes a modern native GNOME desktop interface built using `PyGObject` (GTK4) and `libadwaita`:
+
+- **Audio Controls:** Hardware sidetone slider, microphone volume slider, hardware mic boost toggle, and 10-band equalizer preset dropdown.
+- **Audio Enhancements:** Sliders for DSP bass boost and vocal clarity filters.
+- **Device Status:** Connection state, firmware version, and hardware serial number.
+- **In-Window Alert Banners:** Helpful permission notifications and retry buttons if udev permissions are missing.
+
+### Launching the GUI
+```bash
+# Launch directly from the repository
+./bin/rzropenaud-gui
+
+# Or if installed via pip:
+rzropenaud-gui
+```
+
+### Install to GNOME App Grid (.desktop file)
+To make the application appear in your GNOME application grid under **Settings > Hardware**:
+```bash
+mkdir -p ~/.local/share/applications
+cp data/rzropenaud.desktop ~/.local/share/applications/
+update-desktop-database ~/.local/share/applications/
 ```
 
 ---

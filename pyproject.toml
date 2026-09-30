@@ -19,6 +19,7 @@ dependencies = [
 
 [project.scripts]
 rzropenaud-io = "rzropenaud_io.cli:main"
+rzropenaud-gui = "rzropenaud_io.gui:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
