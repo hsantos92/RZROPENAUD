@@ -1,0 +1,13 @@
+# Udev rule for Razer BlackShark V2 USB Sound Card (Model RZ04-0323)
+# Vendor ID: 0x1532, Product ID: 0x0529
+#
+# Allows unprivileged users (and active GNOME desktop sessions) to read/write to the hidraw device node.
+
+# Grant access to the USB device node
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="0529", MODE="0666", GROUP="audio", TAG+="uaccess"
+
+# Grant access to the hidraw character device node (e.g. /dev/hidraw*)
+KERNEL=="hidraw*", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="0529", MODE="0666", GROUP="audio", TAG+="uaccess"
+
+# Grant access to event input nodes
+SUBSYSTEM=="input", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="0529", MODE="0666", GROUP="audio", TAG+="uaccess"
