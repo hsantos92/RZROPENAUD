@@ -3,6 +3,7 @@
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from rzropenaud_io.constants import EQ_PRESETS
 from rzropenaud_io.easyeffects import EasyEffectsBridge, build_preset_payload
@@ -52,6 +53,22 @@ class TestEasyEffectsBridge(unittest.TestCase):
                 expected_filename = f"Razer-{key.replace('-', ' ').title().replace(' ', '-')}.json"
                 file_path = bridge.output_dir / expected_filename
                 self.assertTrue(file_path.exists(), f"Preset {expected_filename} was not created")
+
+
+    def test_disable_easyeffects_tray(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg_dir = Path(tmpdir) / ".config" / "easyeffects" / "db"
+            cfg_dir.mkdir(parents=True)
+            cfg_file = cfg_dir / "easyeffectsrc"
+            cfg_file.write_text("[Window]\nheight=1000\n", encoding="utf-8")
+
+            bridge = EasyEffectsBridge()
+            # Monkeypatch Home to tempdir for this test
+            with unittest.mock.patch("pathlib.Path.home", return_value=Path(tmpdir)):
+                bridge._disable_easyeffects_tray()
+
+            updated = cfg_file.read_text(encoding="utf-8")
+            self.assertIn("showTrayIcon=false", updated)
 
 
 if __name__ == "__main__":

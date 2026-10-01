@@ -70,6 +70,18 @@ pip install -e .
 ./bin/rzropenaud-io --help
 ```
 
+### 4. EasyEffects Background Service & Tray Stability
+
+`RZROPENAUD-IO` integrates with EasyEffects via PipeWire. To run EasyEffects as a background service:
+```bash
+# Enable and start user service
+systemctl --user enable --now easyeffects.service
+```
+
+> [!TIP]
+> **GNOME Shell / Dash-to-Panel Stability:**
+> On some GNOME Shell versions (GNOME 45–50+), an upstream bug in `gnome-shell-extension-appindicator` causes unhandled exceptions when parsing D-Bus menus with unparented submenus, which can freeze the desktop if right-clicking certain tray icons. `RZROPENAUD-IO` automatically configures `showTrayIcon=false` in `~/.config/easyeffects/db/easyeffectsrc` so EasyEffects runs cleanly in background mode without exporting a redundant tray icon.
+
 ---
 
 ## Native GNOME GUI (GTK4 / Libadwaita)

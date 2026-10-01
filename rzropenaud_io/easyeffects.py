@@ -188,8 +188,30 @@ class EasyEffectsBridge:
 
             # Configure device-specific autoloading so speakers/HDMI never inherit headset effects
             self._setup_autoloading()
+
+            # Ensure EasyEffects tray icon is disabled to avoid GNOME Shell / Dash-to-Panel lockups
+            self._disable_easyeffects_tray()
         except Exception as e:
             logger.debug("Failed to write EasyEffects presets: %s", e)
+
+    def _disable_easyeffects_tray(self) -> None:
+        """Disable EasyEffects tray icon to prevent GNOME Shell / Dash-to-Panel lockups."""
+        try:
+            cfg_file = Path.home() / ".config" / "easyeffects" / "db" / "easyeffectsrc"
+            if not cfg_file.exists():
+                return
+            content = cfg_file.read_text(encoding="utf-8")
+            if "showTrayIcon=false" in content:
+                return
+
+            if "[Window]" in content:
+                content = content.replace("[Window]\n", "[Window]\nshowTrayIcon=false\n")
+            else:
+                content += "\n[Window]\nshowTrayIcon=false\n"
+            cfg_file.write_text(content, encoding="utf-8")
+            logger.debug("Configured EasyEffects showTrayIcon=false")
+        except Exception as e:
+            logger.debug("Failed to configure EasyEffects showTrayIcon: %s", e)
 
     def _setup_autoloading(self) -> None:
         """Configure EasyEffects autoloading rules so only Razer headset gets enhancements."""
