@@ -24,3 +24,7 @@ rzropenaud-gui = "rzropenaud_io.gui:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["rzropenaud_io*"]
+
+[tool.setuptools.package-data]
+rzropenaud_io = ["assets/icons/*.svg"]
+

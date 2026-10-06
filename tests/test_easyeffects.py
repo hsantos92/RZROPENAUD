@@ -1,12 +1,18 @@
 """Unit tests for EasyEffects integration bridge."""
 
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from rzropenaud_io.constants import EQ_PRESETS
-from rzropenaud_io.easyeffects import EasyEffectsBridge, build_preset_payload
+from rzropenaud_io.easyeffects import (
+    VOICE_PRESETS,
+    EasyEffectsBridge,
+    build_preset_payload,
+    build_voice_preset_payload,
+)
 
 
 class TestEasyEffectsBridge(unittest.TestCase):
@@ -54,6 +60,54 @@ class TestEasyEffectsBridge(unittest.TestCase):
                 file_path = bridge.output_dir / expected_filename
                 self.assertTrue(file_path.exists(), f"Preset {expected_filename} was not created")
 
+    def test_build_voice_preset_payload(self):
+        for key in ["off", "deep", "female", "child", "robotic", "monster", "radio"]:
+            payload = build_voice_preset_payload(key)
+            self.assertIn("input", payload)
+            input_block = payload["input"]
+            self.assertIn("blocklist", input_block)
+            self.assertIn("plugins_order", input_block)
+            if key == "off":
+                self.assertEqual(input_block["plugins_order"], [])
+            else:
+                self.assertGreater(len(input_block["plugins_order"]), 0)
+
+    def test_install_voice_presets(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bridge = EasyEffectsBridge()
+            bridge.input_dir = Path(tmpdir)
+            bridge.install_voice_presets()
+
+            for key, info in VOICE_PRESETS.items():
+                expected_filename = f"{info['preset_name']}.json"
+                file_path = bridge.input_dir / expected_filename
+                self.assertTrue(file_path.exists(), f"Voice preset {expected_filename} was not created")
+
+    @patch("subprocess.run")
+    def test_set_microphone_monitoring(self, mock_run):
+        mock_run.return_value.returncode = 0
+        bridge = EasyEffectsBridge()
+        with patch.object(bridge, "is_installed", return_value=True):
+            res = bridge.set_microphone_monitoring(True)
+            self.assertTrue(res)
+            mock_run.assert_called_with(
+                ["easyeffects", "--microphone-monitoring", "1"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=2.0,
+            )
+            self.assertTrue(bridge.voice_monitor_enabled)
+
+            bridge.set_microphone_monitoring(False)
+            mock_run.assert_called_with(
+                ["easyeffects", "--microphone-monitoring", "2"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=2.0,
+            )
+            self.assertFalse(bridge.voice_monitor_enabled)
 
     def test_disable_easyeffects_tray(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -69,6 +123,17 @@ class TestEasyEffectsBridge(unittest.TestCase):
 
             updated = cfg_file.read_text(encoding="utf-8")
             self.assertIn("showTrayIcon=false", updated)
+
+    def test_build_voice_preset_payload(self):
+        payload = build_voice_preset_payload("monster")
+        self.assertIn("pitch", payload["input"])
+        pitch_block = payload["input"]["pitch"]
+        self.assertEqual(pitch_block["semitones"], -7.5)
+        self.assertEqual(pitch_block["tempo-difference"], 0.0)
+
+        payload_child = build_voice_preset_payload("child")
+        self.assertIn("pitch", payload_child["input"])
+        self.assertEqual(payload_child["input"]["pitch"]["semitones"], 6.8)
 
 
 if __name__ == "__main__":

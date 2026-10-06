@@ -81,6 +81,16 @@ class TestRzrOpenAudGUI(unittest.TestCase):
         self.assertIsNotNone(win.sn_row)
         self.assertIsNotNone(win.edit_sn_btn)
 
+        # Verify Voice Changer group and components
+        self.assertEqual(win.voice_group.get_title(), "Voice Changer")
+        self.assertIsNotNone(win.voice_header_toggle)
+        self.assertIsNotNone(win.voice_master_switch)
+        self.assertIsNotNone(win.voice_sidetone_row)
+        self.assertIsNotNone(win.voice_sidetone_switch)
+        self.assertEqual(len(win.voice_buttons), 7)
+        for key in ["off", "deep", "female", "child", "robotic", "monster", "radio"]:
+            self.assertIn(key, win.voice_buttons)
+
         # Clean up window
         win.destroy()
 
@@ -130,6 +140,40 @@ class TestRzrOpenAudGUI(unittest.TestCase):
         self.assertTrue(
             "00000000" in win.sn_row.get_subtitle() or "Not Detected" in win.sn_row.get_subtitle()
         )
+
+        # 8. Voice Changer toggle and preset buttons
+        win.voice_header_toggle.set_active(True)
+        self.assertTrue(win.voice_master_switch.get_active())
+
+        # Select robotic preset button
+        win.voice_buttons["robotic"].set_active(True)
+        self.assertEqual(win.current_voice_preset, "robotic")
+        self.assertTrue(win.voice_enabled)
+
+        # Toggle master switch off
+        win.voice_master_switch.set_active(False)
+        self.assertFalse(win.voice_enabled)
+        self.assertFalse(win.voice_header_toggle.get_active())
+
+        # Select normal button (bypass)
+        win.voice_buttons["off"].set_active(True)
+        self.assertFalse(win.voice_enabled)
+
+        # Test Voice FX Sidetone switch
+        win.voice_master_switch.set_active(True)
+        win.voice_sidetone_switch.set_active(True)
+        self.assertTrue(win.voice_monitor_enabled)
+        win.voice_sidetone_switch.set_active(False)
+        self.assertFalse(win.voice_monitor_enabled)
+
+        # 9. Notification switch toggle and persistence
+        win.notify_switch.set_active(True)
+        win._on_notify_state_set(win.notify_switch, True)
+        from rzropenaud_io.config import get_notifications_enabled
+        self.assertTrue(get_notifications_enabled())
+        win.notify_switch.set_active(False)
+        win._on_notify_state_set(win.notify_switch, False)
+        self.assertFalse(get_notifications_enabled())
 
         win.destroy()
 

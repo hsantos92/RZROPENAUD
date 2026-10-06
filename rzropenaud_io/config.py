@@ -89,3 +89,91 @@ def set_custom_serial(serial: Optional[str]) -> None:
 def clear_custom_serial() -> None:
     """Remove user-configured serial number from config, restoring hardware default."""
     set_custom_serial(None)
+
+
+def get_voice_fx_enabled() -> bool:
+    """Retrieve whether the microphone voice changer is currently active.
+
+    Returns:
+        True if voice changer is enabled in config, False otherwise.
+    """
+    cfg = load_config()
+    return bool(cfg.get("voice_fx_enabled", False))
+
+
+def set_voice_fx_enabled(enabled: bool) -> None:
+    """Set whether the microphone voice changer is enabled.
+
+    Args:
+        enabled: Boolean state to persist.
+    """
+    cfg = load_config()
+    cfg["voice_fx_enabled"] = bool(enabled)
+    save_config(cfg)
+
+
+def get_voice_preset() -> str:
+    """Retrieve the last selected voice changer preset key.
+
+    Returns:
+        Preset identifier (e.g. 'deep', 'robotic', 'female', etc.), default 'deep'.
+    """
+    cfg = load_config()
+    preset = cfg.get("voice_preset", "deep")
+    if isinstance(preset, str) and preset.strip():
+        return preset.strip().lower()
+    return "deep"
+
+
+def set_voice_preset(preset: str) -> None:
+    """Set the last selected voice changer preset key.
+
+    Args:
+        preset: Preset identifier string.
+    """
+    cfg = load_config()
+    cfg["voice_preset"] = str(preset).strip().lower()
+    save_config(cfg)
+
+
+def get_voice_monitor_enabled() -> bool:
+    """Retrieve whether Voice FX sidetone / monitoring is active.
+
+    Returns:
+        True if voice sidetone is enabled, False otherwise.
+    """
+    cfg = load_config()
+    return bool(cfg.get("voice_monitor_enabled", False))
+
+
+def set_voice_monitor_enabled(enabled: bool) -> None:
+    """Set whether Voice FX sidetone / monitoring is enabled.
+
+    Args:
+        enabled: Boolean state to persist.
+    """
+    cfg = load_config()
+    cfg["voice_monitor_enabled"] = bool(enabled)
+    save_config(cfg)
+
+
+def get_notifications_enabled() -> bool:
+    """Retrieve whether desktop notifications on state changes are enabled.
+
+    Returns:
+        True if enabled in config, False otherwise (defaults to False).
+    """
+    cfg = load_config()
+    return bool(cfg.get("notifications_enabled", False))
+
+
+def set_notifications_enabled(enabled: bool) -> None:
+    """Set whether desktop notifications on state changes are enabled.
+
+    Args:
+        enabled: Boolean state to persist.
+    """
+    cfg = load_config()
+    cfg["notifications_enabled"] = bool(enabled)
+    save_config(cfg)
+

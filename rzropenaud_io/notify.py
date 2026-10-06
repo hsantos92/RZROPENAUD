@@ -28,6 +28,7 @@ class DesktopNotifier:
         icon: Optional[str] = None,
         urgency: str = "normal",
         timeout_ms: int = 3000,
+        force: bool = False,
     ) -> bool:
         """Send a desktop notification.
 
@@ -37,11 +38,12 @@ class DesktopNotifier:
             icon: Freedesktop icon name.
             urgency: 'low', 'normal', or 'critical'.
             timeout_ms: Duration in milliseconds before disappearing.
+            force: If True, send even if state-change notifications are disabled.
 
         Returns:
             True if notification command exited with code 0, False otherwise.
         """
-        if not self.enabled or not self.is_available():
+        if (not self.enabled and not force) or not self.is_available():
             return False
 
         icon_name = icon or self.default_icon
@@ -93,3 +95,11 @@ class DesktopNotifier:
     def notify_bass_boost(self, level: int) -> bool:
         """Notification for bass boost change."""
         return self.send("Razer BlackShark V2", f"Bass Boost set to {level}%", icon="audio-speakers")
+
+    def notify_connected(self, model: str = "Razer BlackShark V2") -> bool:
+        """Notification when headset is connected."""
+        return self.send(model, "Headset Connected", icon="audio-headset", force=True)
+
+    def notify_disconnected(self, model: str = "Razer BlackShark V2") -> bool:
+        """Notification when headset is disconnected."""
+        return self.send(model, "Headset Disconnected", icon="audio-headset", force=True)

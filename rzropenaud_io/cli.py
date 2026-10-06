@@ -10,7 +10,11 @@ import logging
 import sys
 from typing import List, Optional
 
-from rzropenaud_io.config import clear_custom_serial, set_custom_serial
+from rzropenaud_io.config import (
+    clear_custom_serial,
+    get_voice_preset,
+    set_custom_serial,
+)
 from rzropenaud_io.constants import EQ_BAND_LABELS, EQ_PRESETS
 from rzropenaud_io.device import (
     BlackSharkV2,
@@ -18,6 +22,7 @@ from rzropenaud_io.device import (
     RazerNotFoundError,
     RazerPermissionError,
 )
+from rzropenaud_io.easyeffects import VOICE_PRESETS, EasyEffectsBridge
 from rzropenaud_io.notify import DesktopNotifier
 
 
@@ -82,6 +87,24 @@ Examples:
         type=int,
         metavar="0-100",
         help="Set voice clarity / ambient noise reduction (0 to 100 percent).",
+    )
+    parser.add_argument(
+        "--voice-fx",
+        type=str,
+        metavar="PRESET",
+        choices=["off", "normal", "deep", "female", "child", "robotic", "monster", "radio"],
+        help="Apply microphone voice changer preset via EasyEffects (off, deep, female, child, robotic, monster, radio).",
+    )
+    parser.add_argument(
+        "--list-voice-fx",
+        action="store_true",
+        help="List available microphone voice changer presets.",
+    )
+    parser.add_argument(
+        "--voice-sidetone", "--voice-monitor",
+        choices=["on", "off"],
+        dest="voice_sidetone",
+        help="Enable or disable Voice FX sidetone / monitoring (listen to voice effects in your headset).",
     )
 
     # Serial Number Configuration
@@ -151,6 +174,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         args.mic_boost is not None,
         args.bass_boost is not None,
         args.voice_clarity is not None,
+        args.voice_fx is not None,
+        args.voice_sidetone is not None,
+        args.list_voice_fx,
         args.set_serial is not None,
         args.clear_serial,
         args.status,
@@ -159,6 +185,32 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not has_actions:
         parser.print_help()
         return 0
+
+    if args.list_voice_fx:
+        print("Available Microphone Voice Changer Presets (EasyEffects):")
+        for key, info in VOICE_PRESETS.items():
+            print(f"  {key:<10} - {info['title']}: {info['subtitle']}")
+        return 0
+
+    # Handle voice preset changes
+    if args.voice_fx is not None:
+        ee = EasyEffectsBridge()
+        enabled = args.voice_fx not in ("off", "normal")
+        ee.apply_voice_preset(args.voice_fx, enabled=enabled, sync=True)
+        preset_info = VOICE_PRESETS.get(args.voice_fx.lower(), {})
+        title = preset_info.get("title", args.voice_fx)
+        if enabled:
+            print(f"✓ Microphone voice changer set to '{title}' (EasyEffects)")
+        else:
+            print("✓ Microphone voice changer disabled (Passthrough)")
+
+    # Handle voice sidetone (monitoring)
+    if args.voice_sidetone is not None:
+        ee = EasyEffectsBridge()
+        mon_enabled = args.voice_sidetone == "on"
+        ee.set_microphone_monitoring(mon_enabled)
+        state_str = "Enabled" if mon_enabled else "Disabled"
+        print(f"✓ Voice FX Sidetone (monitoring in headset) {state_str}")
 
     # Handle serial configuration
     if args.set_serial is not None or args.clear_serial:
@@ -172,18 +224,18 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(f"✓ Saved headset physical serial number: {sn}")
             notifier.send("Razer BlackShark V2", f"Headset serial set to {sn}")
 
-        # Check if there are other hardware actions to perform
-        hw_actions = any([
-            args.mic_volume is not None,
-            args.sidetone is not None,
-            args.eq is not None,
-            args.mic_boost is not None,
-            args.bass_boost is not None,
-            args.voice_clarity is not None,
-            args.status,
-        ])
-        if not hw_actions:
-            return 0
+    # Check if there are other hardware actions to perform
+    hw_actions = any([
+        args.mic_volume is not None,
+        args.sidetone is not None,
+        args.eq is not None,
+        args.mic_boost is not None,
+        args.bass_boost is not None,
+        args.voice_clarity is not None,
+        args.status,
+    ])
+    if not hw_actions:
+        return 0
 
     try:
         with BlackSharkV2(verbose=args.verbose) as dev:
@@ -198,6 +250,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                 print(f"Interface:        {info['interface_number']}")
                 print(f"Firmware:         {info['firmware_version']}")
                 print(f"Serial Number:    {info['serial_number']}")
+                voice_status = f"{info.get('voice_preset', 'off')} ({'Enabled' if info.get('voice_fx_enabled') else 'Disabled'})"
+                print(f"Voice Changer:    {voice_status}")
+                voice_mon = "Enabled" if info.get("voice_monitor_enabled") else "Disabled"
+                print(f"Voice Sidetone:   {voice_mon}")
                 print("==================================================")
 
             # Apply mic volume

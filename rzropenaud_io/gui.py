@@ -3,8 +3,7 @@
 Provides modern Adw-styled controls for Razer BlackShark V2 (Model RZ04-0323).
 """
 
-from __future__ import annotations
-
+from pathlib import Path
 import sys
 from typing import Any, Dict, List, Optional
 
@@ -12,9 +11,21 @@ import gi
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gio, GLib, Gtk
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
-from rzropenaud_io.config import clear_custom_serial, get_custom_serial, set_custom_serial
+from rzropenaud_io.config import (
+    clear_custom_serial,
+    get_custom_serial,
+    get_notifications_enabled,
+    get_voice_fx_enabled,
+    get_voice_monitor_enabled,
+    get_voice_preset,
+    set_custom_serial,
+    set_notifications_enabled,
+    set_voice_fx_enabled,
+    set_voice_monitor_enabled,
+    set_voice_preset,
+)
 from rzropenaud_io.constants import (
     BLACKSHARK_V2_PID,
     DEVICE_MODEL_NAME,
@@ -27,6 +38,7 @@ from rzropenaud_io.device import (
     RazerNotFoundError,
     RazerPermissionError,
 )
+from rzropenaud_io.easyeffects import VOICE_PRESETS, EasyEffectsBridge
 from rzropenaud_io.notify import DesktopNotifier
 
 
@@ -41,8 +53,17 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
 
         # Hardware backend state
         self.device: Optional[BlackSharkV2] = None
-        self.notifier = DesktopNotifier(app_name="RZROPENAUD-IO", enabled=True)
+        self.notifier = DesktopNotifier(app_name="RZROPENAUD-IO", enabled=get_notifications_enabled())
         self.device_info: Dict[str, Any] = {}
+        self._device_was_connected: bool = False
+
+        # Voice changer DSP state
+        self.easyeffects = EasyEffectsBridge()
+        self.voice_enabled: bool = get_voice_fx_enabled()
+        self.voice_monitor_enabled: bool = get_voice_monitor_enabled()
+        self.current_voice_preset: str = get_voice_preset()
+        self.voice_buttons: Dict[str, Gtk.ToggleButton] = {}
+        self._updating_voice_ui: bool = False
 
         # Debounce timers for sliders to avoid flooding the USB bus while dragging
         self._sidetone_timer: Optional[int] = None
@@ -58,6 +79,32 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
 
     def _build_ui(self) -> None:
         """Construct the libadwaita layout with HeaderBar, Banner, and PreferencesPage."""
+        # Load custom CSS for Voice Changer cards and push buttons
+        css = """
+        .voice-card-btn {
+            border-radius: 12px;
+            padding: 8px 6px;
+            transition: all 180ms ease-in-out;
+            border: 2px solid transparent;
+            min-width: 95px;
+            min-height: 80px;
+        }
+        .voice-card-btn:checked {
+            background-color: alpha(@accent_color, 0.18);
+            border-color: @accent_color;
+        }
+        .voice-card-btn:hover {
+            background-color: alpha(@accent_color, 0.08);
+        }
+        """
+        provider = Gtk.CssProvider()
+        provider.load_from_data(css.encode("utf-8"))
+        disp = Gdk.Display.get_default()
+        if disp:
+            Gtk.StyleContext.add_provider_for_display(
+                disp, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+            )
+
         self.toolbar_view = Adw.ToolbarView()
         self.set_content(self.toolbar_view)
 
@@ -70,6 +117,19 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
         self.refresh_btn.set_tooltip_text("Refresh device status and re-scan USB bus")
         self.refresh_btn.connect("clicked", self._on_refresh_clicked)
         self.header_bar.pack_start(self.refresh_btn)
+
+        # Quick Voice Changer Toggle at the beginning of the GUI
+        self.voice_header_toggle = Gtk.ToggleButton()
+        self.voice_header_toggle.set_tooltip_text("Toggle Microphone Voice Changer (On/Off)")
+        self.voice_header_toggle.add_css_class("flat")
+        voice_hdr_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        voice_hdr_icon = Gtk.Image.new_from_icon_name("audio-input-microphone-symbolic")
+        self.voice_hdr_label = Gtk.Label(label="Voice FX: Off")
+        voice_hdr_box.append(voice_hdr_icon)
+        voice_hdr_box.append(self.voice_hdr_label)
+        self.voice_header_toggle.set_child(voice_hdr_box)
+        self.voice_header_toggle.connect("toggled", self._on_voice_header_toggled)
+        self.header_bar.pack_end(self.voice_header_toggle)
 
         # 2. In-window Banner for error & permission notices
         self.banner = Adw.Banner()
@@ -231,6 +291,101 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
         self.voice_clarity_row.add_suffix(self.voice_clarity_scale)
         self.enhancements_group.add(self.voice_clarity_row)
 
+        # --- Voice Changer Group ---
+        self.voice_group = Adw.PreferencesGroup(
+            title="Voice Changer",
+            description="Real-time microphone transformation via PipeWire and EasyEffects",
+        )
+        self.pref_page.add(self.voice_group)
+
+        # Master Switch Row
+        self.voice_master_row = Adw.ActionRow(
+            title="Microphone Voice Changer",
+            subtitle="Enable real-time voice modification effects",
+        )
+        self.voice_master_row.add_prefix(Gtk.Image.new_from_icon_name("audio-input-microphone-symbolic"))
+
+        self.voice_master_switch = Gtk.Switch()
+        self.voice_master_switch.set_valign(Gtk.Align.CENTER)
+        self.voice_master_switch.connect("state-set", self._on_voice_master_switch_state_set)
+        self.voice_master_row.add_suffix(self.voice_master_switch)
+        self.voice_master_row.set_activatable_widget(self.voice_master_switch)
+        self.voice_group.add(self.voice_master_row)
+
+        # Voice FX Sidetone Switch Row (listen to voice effects in headset)
+        self.voice_sidetone_row = Adw.ActionRow(
+            title="Voice FX Sidetone",
+            subtitle="Listen to transformed voice effects in your headset in real-time",
+        )
+        self.voice_sidetone_row.add_prefix(Gtk.Image.new_from_icon_name("audio-headphones-symbolic"))
+
+        self.voice_sidetone_switch = Gtk.Switch()
+        self.voice_sidetone_switch.set_valign(Gtk.Align.CENTER)
+        self.voice_sidetone_switch.connect("state-set", self._on_voice_sidetone_switch_state_set)
+        self.voice_sidetone_row.add_suffix(self.voice_sidetone_switch)
+        self.voice_sidetone_row.set_activatable_widget(self.voice_sidetone_switch)
+        self.voice_group.add(self.voice_sidetone_row)
+
+        # Push Buttons FlowBox Row
+        self.voice_presets_row = Adw.PreferencesRow()
+        self.voice_presets_row.set_selectable(False)
+
+        voice_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        voice_box.set_margin_top(12)
+        voice_box.set_margin_bottom(12)
+        voice_box.set_margin_start(12)
+        voice_box.set_margin_end(12)
+
+        self.voice_flowbox = Gtk.FlowBox()
+        self.voice_flowbox.set_valign(Gtk.Align.CENTER)
+        self.voice_flowbox.set_halign(Gtk.Align.FILL)
+        self.voice_flowbox.set_max_children_per_line(4)
+        self.voice_flowbox.set_min_children_per_line(2)
+        self.voice_flowbox.set_selection_mode(Gtk.SelectionMode.NONE)
+        self.voice_flowbox.set_row_spacing(10)
+        self.voice_flowbox.set_column_spacing(10)
+        self.voice_flowbox.set_homogeneous(True)
+
+        icons_dir = Path(__file__).parent / "assets" / "icons"
+        first_btn: Optional[Gtk.ToggleButton] = None
+
+        for key, info in VOICE_PRESETS.items():
+            btn = Gtk.ToggleButton()
+            btn.set_tooltip_text(f"{info['title']} - {info['subtitle']}")
+            btn.add_css_class("card")
+            btn.add_css_class("voice-card-btn")
+            btn.set_hexpand(True)
+
+            if first_btn is None:
+                first_btn = btn
+            else:
+                btn.set_group(first_btn)
+
+            btn_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+            btn_box.set_valign(Gtk.Align.CENTER)
+            btn_box.set_halign(Gtk.Align.CENTER)
+
+            icon_file = icons_dir / info.get("icon", "")
+            if icon_file.exists():
+                img = Gtk.Image.new_from_file(str(icon_file))
+            else:
+                img = Gtk.Image.new_from_icon_name(info.get("symbolic", "audio-input-microphone-symbolic"))
+            img.set_pixel_size(36)
+            btn_box.append(img)
+
+            title_label = Gtk.Label(label=info["title"])
+            title_label.add_css_class("caption")
+            btn_box.append(title_label)
+
+            btn.set_child(btn_box)
+            btn.connect("toggled", self._on_voice_button_toggled, key)
+            self.voice_buttons[key] = btn
+            self.voice_flowbox.append(btn)
+
+        voice_box.append(self.voice_flowbox)
+        self.voice_presets_row.set_child(voice_box)
+        self.voice_group.add(self.voice_presets_row)
+
         # --- Preferences / Settings Group ---
         self.settings_group = Adw.PreferencesGroup(title="Preferences")
         self.pref_page.add(self.settings_group)
@@ -242,12 +397,15 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
         self.notify_row.add_prefix(Gtk.Image.new_from_icon_name("user-available-symbolic"))
 
         self.notify_switch = Gtk.Switch()
-        self.notify_switch.set_active(True)
+        self.notify_switch.set_active(get_notifications_enabled())
         self.notify_switch.set_valign(Gtk.Align.CENTER)
         self.notify_switch.connect("state-set", self._on_notify_state_set)
         self.notify_row.add_suffix(self.notify_switch)
         self.notify_row.set_activatable_widget(self.notify_switch)
         self.settings_group.add(self.notify_row)
+
+        # Synchronize initial voice UI state
+        self._sync_voice_ui()
 
     # -------------------------------------------------------------------------
     # Hardware Connection & State Management
@@ -264,6 +422,11 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
             dev = BlackSharkV2(verbose=False)
             dev.open()
             self.device = dev
+
+            # Notify connection if state changed
+            if not self._device_was_connected:
+                self.notifier.notify_connected("Razer BlackShark V2")
+                self._device_was_connected = True
 
             # Query hardware details
             self.device_info = dev.get_device_info()
@@ -301,6 +464,9 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
                 pass
 
         except RazerPermissionError:
+            if self._device_was_connected:
+                self.notifier.notify_disconnected("Razer BlackShark V2")
+                self._device_was_connected = False
             self.status_badge.set_label("Permission Denied")
             self.status_badge.remove_css_class("success")
             self.status_badge.add_css_class("error")
@@ -316,6 +482,9 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
             self._set_controls_sensitive(False)
 
         except RazerNotFoundError:
+            if self._device_was_connected:
+                self.notifier.notify_disconnected("Razer BlackShark V2")
+                self._device_was_connected = False
             self.status_badge.set_label("Not Found")
             self.status_badge.remove_css_class("success")
             self.status_badge.add_css_class("dim-label")
@@ -329,6 +498,9 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
             self._set_controls_sensitive(False)
 
         except RazerDeviceError as e:
+            if self._device_was_connected:
+                self.notifier.notify_disconnected("Razer BlackShark V2")
+                self._device_was_connected = False
             self.status_badge.set_label("Device Error")
             self.fw_row.set_subtitle("Device Error")
             self.sn_row.set_subtitle("Device Error")
@@ -445,6 +617,7 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
     def _on_notify_state_set(self, _switch: Gtk.Switch, state: bool) -> bool:
         """Toggle desktop notification preference."""
         self.notifier.enabled = state
+        set_notifications_enabled(state)
         return False
 
     # -------------------------------------------------------------------------
@@ -540,6 +713,107 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
             except Exception as e:
                 print(f"[GUI] Voice clarity error: {e}", file=sys.stderr)
         return GLib.SOURCE_REMOVE
+
+    # -------------------------------------------------------------------------
+    # Voice Changer Event Handlers
+    # -------------------------------------------------------------------------
+
+    def _sync_voice_ui(self) -> None:
+        """Synchronize voice changer UI components with current state."""
+        self._updating_voice_ui = True
+        try:
+            # Sync master switch in Voice Changer group
+            self.voice_master_switch.set_active(self.voice_enabled)
+
+            # Sync quick toggle button in HeaderBar
+            self.voice_header_toggle.set_active(self.voice_enabled)
+            preset_info = VOICE_PRESETS.get(self.current_voice_preset, {})
+            title = preset_info.get("title", self.current_voice_preset.title())
+            if self.voice_enabled and self.current_voice_preset != "off":
+                self.voice_hdr_label.set_label(f"Voice FX: {title}")
+                self.voice_header_toggle.add_css_class("suggested-action")
+            else:
+                self.voice_hdr_label.set_label("Voice FX: Off")
+                self.voice_header_toggle.remove_css_class("suggested-action")
+
+            # Sync active push button
+            active_key = self.current_voice_preset if self.voice_enabled else "off"
+            if active_key in self.voice_buttons:
+                self.voice_buttons[active_key].set_active(True)
+
+            # Sync Voice FX sidetone switch
+            self.voice_sidetone_switch.set_active(self.voice_monitor_enabled and self.voice_enabled)
+            self.voice_sidetone_row.set_sensitive(self.voice_enabled)
+
+            # Enable/disable push buttons depending on whether master switch is on
+            self.voice_flowbox.set_sensitive(self.voice_enabled)
+
+        finally:
+            self._updating_voice_ui = False
+
+    def _on_voice_header_toggled(self, btn: Gtk.ToggleButton) -> None:
+        """Handle toggle of HeaderBar quick voice changer button."""
+        if self._updating_voice_ui:
+            return
+        is_active = btn.get_active()
+        self.voice_master_switch.set_active(is_active)
+
+    def _on_voice_master_switch_state_set(self, _switch: Gtk.Switch, state: bool) -> bool:
+        """Handle toggle of Voice Changer master switch."""
+        if self._updating_voice_ui:
+            return False
+
+        self.voice_enabled = state
+        set_voice_fx_enabled(state)
+
+        # Default to 'deep' voice if turning on from off
+        if self.voice_enabled and self.current_voice_preset == "off":
+            self.current_voice_preset = "deep"
+            set_voice_preset("deep")
+
+        # Apply to EasyEffects input pipeline
+        preset_to_load = self.current_voice_preset if self.voice_enabled else "off"
+        self._apply_voice_preset(preset_to_load, enabled=self.voice_enabled)
+
+        # Update microphone monitoring sidetone
+        self.easyeffects.set_microphone_monitoring(self.voice_enabled and self.voice_monitor_enabled)
+
+        self._sync_voice_ui()
+        return False
+
+    def _on_voice_sidetone_switch_state_set(self, _switch: Gtk.Switch, state: bool) -> bool:
+        """Handle toggle of Voice FX Sidetone (monitoring in headset)."""
+        if self._updating_voice_ui:
+            return False
+
+        self.voice_monitor_enabled = state
+        set_voice_monitor_enabled(state)
+        self.easyeffects.set_microphone_monitoring(state and self.voice_enabled)
+        return False
+
+    def _on_voice_button_toggled(self, btn: Gtk.ToggleButton, preset_key: str) -> None:
+        """Handle selection of a voice preset push button."""
+        if self._updating_voice_ui or not btn.get_active():
+            return
+
+        if preset_key in ("off", "normal"):
+            self.voice_enabled = False
+            self.current_voice_preset = "off"
+            set_voice_fx_enabled(False)
+            set_voice_preset("off")
+            self._apply_voice_preset("off", enabled=False)
+        else:
+            self.voice_enabled = True
+            self.current_voice_preset = preset_key
+            set_voice_fx_enabled(True)
+            set_voice_preset(preset_key)
+            self._apply_voice_preset(preset_key, enabled=True)
+
+        self._sync_voice_ui()
+
+    def _apply_voice_preset(self, preset_key: str, enabled: bool = True) -> None:
+        """Apply voice preset via EasyEffectsBridge without distracting alerts."""
+        self.easyeffects.apply_voice_preset(preset_key, enabled=enabled, sync=False)
 
     def do_destroy(self) -> None:
         """Clean up hardware connection on window close."""

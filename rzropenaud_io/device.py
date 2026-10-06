@@ -416,6 +416,22 @@ class BlackSharkV2:
         resp = self.send_and_receive(pkt)
         return resp.is_successful()
 
+    def set_voice_preset(self, preset_key: str, enabled: bool = True) -> bool:
+        """Apply a microphone voice changer preset via EasyEffects input pipeline."""
+        return self.easyeffects.apply_voice_preset(preset_key, enabled=enabled)
+
+    def get_voice_preset(self) -> str:
+        """Get the active voice changer preset name."""
+        return self.easyeffects.get_active_voice_preset()
+
+    def set_voice_monitor(self, enabled: bool) -> bool:
+        """Enable or disable microphone monitoring (listening to voice effects in headset)."""
+        return self.easyeffects.set_microphone_monitoring(enabled)
+
+    def get_voice_monitor(self) -> bool:
+        """Check if microphone monitoring of voice effects is active."""
+        return self.easyeffects.get_microphone_monitoring()
+
     def get_device_info(self) -> Dict[str, Any]:
         """Query firmware version, serial number, and hardware details.
 
@@ -434,6 +450,9 @@ class BlackSharkV2:
             "serial_raw": "Unknown",
             "is_custom_serial": False,
             "interface_number": self._dev_info.get("interface_number") if self._dev_info else TARGET_HID_INTERFACE,
+            "voice_preset": self.easyeffects.get_active_voice_preset(),
+            "voice_fx_enabled": self.easyeffects.voice_enabled,
+            "voice_monitor_enabled": self.easyeffects.get_microphone_monitoring(),
         }
 
         # 1. Determine Firmware Version

@@ -113,6 +113,16 @@ class TestConfigAndDeviceInfo(unittest.TestCase):
         self.assertEqual(ret_clear, 0)
         self.assertIsNone(config_mod.get_custom_serial())
 
+    def test_notifications_enabled_persistence(self):
+        # Default is False
+        self.assertFalse(config_mod.get_notifications_enabled())
+
+        config_mod.set_notifications_enabled(True)
+        self.assertTrue(config_mod.get_notifications_enabled())
+
+        config_mod.set_notifications_enabled(False)
+        self.assertFalse(config_mod.get_notifications_enabled())
+
 
 if __name__ == "__main__":
     unittest.main()

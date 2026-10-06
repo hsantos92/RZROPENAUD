@@ -15,6 +15,7 @@
 - **Hardware Sidetone (Mic Monitoring):** Configure zero-latency hardware sidetone level (`0` to `100%`) or toggle it on/off.
 - **Microphone Volume & Boost:** Adjust mic input gain and hardware boost directly on the audio chip.
 - **10-Band Equalizer:** Apply built-in tuned presets (`game`, `movie`, `music`, `voice`, `esports`, `flat`, `bass-boost`) or custom dB values across 10 bands (31Hz to 16kHz).
+- **Real-Time Voice Changer:** Native low-latency microphone voice effects via PipeWire & EasyEffects with tuned DSP chains (`deep`, `female`, `child`, `robotic`, `monster`, `radio`, `off`).
 - **Razer Standard 90-Byte HID Protocol:** Full implementation of OpenRazer's 90-byte packet structure with dynamic XOR checksum calculation and status acknowledgement verification.
 - **Direct DSP Memory Mapping:** High-fidelity register write fallback (Report ID `0x04`) reverse-engineered from Razer Synapse USB traffic captures.
 - **GNOME Desktop Integration:** State changes automatically trigger native desktop notifications via `notify-send`.
@@ -90,6 +91,8 @@ systemctl --user enable --now easyeffects.service
 
 - **Audio Controls:** Hardware sidetone slider, microphone volume slider, hardware mic boost toggle, and 10-band equalizer preset dropdown.
 - **Audio Enhancements:** Sliders for DSP bass boost and vocal clarity filters.
+- **Voice Changer:** Dedicated card with master toggle switch, Voice FX Sidetone switch (to monitor altered voices in your headset), and 7 interactive push buttons with custom vector icons for instantly switching presets.
+- **Preferences:** Persistent toggle for desktop alerts (disabled by default to avoid distracting popups; device connection and disconnection alerts are cleanly delivered).
 - **Device Status:** Connection state, firmware version, and hardware serial number.
 - **In-Window Alert Banners:** Helpful permission notifications and retry buttons if udev permissions are missing.
 
@@ -117,11 +120,32 @@ update-desktop-database ~/.local/share/applications/
 ```
 usage: rzropenaud-io [-h] [--mic-volume 0-100] [--sidetone 0-100] [--eq PRESET|BANDS]
                      [--mic-boost {on,off}] [--bass-boost 0-100] [--voice-clarity 0-100]
+                     [--voice-fx PRESET] [--voice-sidetone {on,off}] [--list-voice-fx]
                      [--set-serial SERIAL] [--clear-serial]
                      [-s] [--notify | --no-notify] [--direct] [-v]
 ```
 
 ### Examples
+
+#### Real-Time Microphone Voice Changer & Sidetone Monitoring
+```bash
+# List available voice presets
+rzropenaud-io --list-voice-fx
+
+# Apply voice effects (real-time via PipeWire & EasyEffects)
+rzropenaud-io --voice-fx child
+rzropenaud-io --voice-fx robotic
+rzropenaud-io --voice-fx monster
+
+# Listen to the transformed voice in your headset (real-time software sidetone)
+rzropenaud-io --voice-sidetone on
+
+# Turn off headset monitoring of effects
+rzropenaud-io --voice-sidetone off
+
+# Disable voice effects (clean passthrough)
+rzropenaud-io --voice-fx off
+```
 
 #### Query Device Information & Status
 ```bash
