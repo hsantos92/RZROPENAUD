@@ -84,6 +84,7 @@ systemctl --user enable --now easyeffects.service
 > On some GNOME Shell versions (GNOME 45–50+), an upstream bug in `gnome-shell-extension-appindicator` causes unhandled exceptions when parsing D-Bus menus with unparented submenus, which can freeze the desktop if right-clicking certain tray icons. `RZROPENAUD-IO` automatically configures `showTrayIcon=false` in `~/.config/easyeffects/db/easyeffectsrc` so EasyEffects runs cleanly in background mode without exporting a redundant tray icon.
 
 ---
+<img width="1785" height="2034" alt="Screenshot From 2026-10-06 09-12-10" src="https://github.com/user-attachments/assets/9a2b7a1d-3418-451a-bd6c-89c4367d980d" />
 
 ## Native GNOME GUI (GTK4 / Libadwaita)
 
