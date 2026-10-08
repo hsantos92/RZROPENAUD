@@ -10,7 +10,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -175,5 +175,40 @@ def set_notifications_enabled(enabled: bool) -> None:
     """
     cfg = load_config()
     cfg["notifications_enabled"] = bool(enabled)
+    save_config(cfg)
+
+
+def get_window_geometry() -> Tuple[int, int, bool]:
+    """Retrieve saved window size (width, height) and maximized state.
+
+    Returns:
+        Tuple of (width, height, is_maximized). Defaults to (560, 720, False).
+    """
+    cfg = load_config()
+    win_cfg = cfg.get("window", {})
+    if isinstance(win_cfg, dict):
+        width = int(win_cfg.get("width", 560))
+        height = int(win_cfg.get("height", 720))
+        is_maximized = bool(win_cfg.get("maximized", False))
+        width = max(400, min(3840, width))
+        height = max(400, min(2160, height))
+        return width, height, is_maximized
+    return 560, 720, False
+
+
+def set_window_geometry(width: int, height: int, is_maximized: bool = False) -> None:
+    """Save window size and maximized state to configuration.
+
+    Args:
+        width: Window width in pixels.
+        height: Window height in pixels.
+        is_maximized: Whether window was maximized.
+    """
+    cfg = load_config()
+    cfg["window"] = {
+        "width": int(width),
+        "height": int(height),
+        "maximized": bool(is_maximized),
+    }
     save_config(cfg)
 

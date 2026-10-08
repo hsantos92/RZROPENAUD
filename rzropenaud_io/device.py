@@ -63,6 +63,18 @@ class RazerNotFoundError(RazerDeviceError):
     pass
 
 
+def is_blackshark_connected(
+    vid: int = RAZER_VENDOR_ID,
+    pid: int = BLACKSHARK_V2_PID,
+) -> bool:
+    """Check if the Razer BlackShark V2 USB Sound Card is physically connected."""
+    try:
+        devs = hid.enumerate(vid, pid)
+        return bool(devs)
+    except Exception:
+        return False
+
+
 def find_blackshark_interface(
     vid: int = RAZER_VENDOR_ID,
     pid: int = BLACKSHARK_V2_PID,
@@ -177,6 +189,22 @@ class BlackSharkV2:
             except Exception:
                 pass
             self._dev = None
+
+    def is_connected(self) -> bool:
+        """Check if this BlackSharkV2 controller instance is still physically connected."""
+        if self._dev is None or self._dev_info is None:
+            return False
+
+        path = self._dev_info.get("path")
+        if path:
+            try:
+                path_str = path.decode("utf-8", errors="ignore") if isinstance(path, bytes) else str(path)
+                if not Path(path_str).exists():
+                    return False
+            except Exception:
+                return False
+
+        return is_blackshark_connected()
 
     def send_and_receive(
         self,

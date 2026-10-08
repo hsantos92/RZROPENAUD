@@ -20,11 +20,13 @@ from rzropenaud_io.config import (
     get_voice_fx_enabled,
     get_voice_monitor_enabled,
     get_voice_preset,
+    get_window_geometry,
     set_custom_serial,
     set_notifications_enabled,
     set_voice_fx_enabled,
     set_voice_monitor_enabled,
     set_voice_preset,
+    set_window_geometry,
 )
 from rzropenaud_io.constants import (
     BLACKSHARK_V2_PID,
@@ -37,6 +39,7 @@ from rzropenaud_io.device import (
     RazerDeviceError,
     RazerNotFoundError,
     RazerPermissionError,
+    is_blackshark_connected,
 )
 from rzropenaud_io.easyeffects import VOICE_PRESETS, EasyEffectsBridge
 from rzropenaud_io.notify import DesktopNotifier
@@ -49,13 +52,23 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
         super().__init__(**kwargs)
 
         self.set_title("RZROPENAUD-IO")
-        self.set_default_size(560, 720)
+
+        # Window geometry persistence
+        self._last_saved_w, self._last_saved_h, is_maximized = get_window_geometry()
+        self.set_default_size(self._last_saved_w, self._last_saved_h)
+        if is_maximized:
+            self.maximize()
+
+        self.connect("close-request", self._on_close_request)
+        self.connect("destroy", self._on_destroy)
 
         # Hardware backend state
         self.device: Optional[BlackSharkV2] = None
         self.notifier = DesktopNotifier(app_name="RZROPENAUD-IO", enabled=get_notifications_enabled())
         self.device_info: Dict[str, Any] = {}
         self._device_was_connected: bool = False
+        self._permission_denied: bool = False
+        self._poll_timer_id: Optional[int] = None
 
         # Voice changer DSP state
         self.easyeffects = EasyEffectsBridge()
@@ -76,6 +89,9 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
 
         # Connect to hardware device
         self._connect_device()
+
+        # Background polling timer to monitor device connection & window geometry
+        self._poll_timer_id = GLib.timeout_add_seconds(1, self._poll_device_connection)
 
     def _build_ui(self) -> None:
         """Construct the libadwaita layout with HeaderBar, Banner, and PreferencesPage."""
@@ -464,6 +480,7 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
                 pass
 
         except RazerPermissionError:
+            self._permission_denied = True
             if self._device_was_connected:
                 self.notifier.notify_disconnected("Razer BlackShark V2")
                 self._device_was_connected = False
@@ -482,11 +499,13 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
             self._set_controls_sensitive(False)
 
         except RazerNotFoundError:
+            self._permission_denied = False
             if self._device_was_connected:
                 self.notifier.notify_disconnected("Razer BlackShark V2")
                 self._device_was_connected = False
-            self.status_badge.set_label("Not Found")
+            self.status_badge.set_label("Disconnected")
             self.status_badge.remove_css_class("success")
+            self.status_badge.remove_css_class("error")
             self.status_badge.add_css_class("dim-label")
             self.fw_row.set_subtitle("Not Detected")
             custom_sn = get_custom_serial()
@@ -498,10 +517,13 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
             self._set_controls_sensitive(False)
 
         except RazerDeviceError as e:
+            self._permission_denied = False
             if self._device_was_connected:
                 self.notifier.notify_disconnected("Razer BlackShark V2")
                 self._device_was_connected = False
             self.status_badge.set_label("Device Error")
+            self.status_badge.remove_css_class("success")
+            self.status_badge.add_css_class("error")
             self.fw_row.set_subtitle("Device Error")
             self.sn_row.set_subtitle("Device Error")
             self.banner.set_title(f"Hardware communication error: {e}")
@@ -608,11 +630,97 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
 
     def _on_banner_button_clicked(self, _banner: Adw.Banner) -> None:
         """Retry connection when banner action button is pressed."""
+        self._permission_denied = False
         self._connect_device()
 
     def _on_refresh_clicked(self, _btn: Gtk.Button) -> None:
         """Manual refresh from HeaderBar button."""
+        self._permission_denied = False
         self._connect_device()
+
+    def _handle_disconnect(self) -> None:
+        """Handle hardware disconnection (e.g. USB cable unplugged)."""
+        if self.device is not None:
+            try:
+                self.device.close()
+            except Exception:
+                pass
+            self.device = None
+
+        if self._device_was_connected:
+            self.notifier.notify_disconnected("Razer BlackShark V2")
+            self._device_was_connected = False
+
+        self.status_badge.set_label("Disconnected")
+        self.status_badge.remove_css_class("success")
+        self.status_badge.remove_css_class("error")
+        self.status_badge.add_css_class("dim-label")
+
+        self.fw_row.set_subtitle("Not Detected")
+        custom_sn = get_custom_serial()
+        self.sn_row.set_subtitle(f"{custom_sn} (Saved)" if custom_sn else "Not Detected")
+
+        self.banner.set_title("Razer BlackShark V2 USB Sound Card disconnected. Please check USB cable.")
+        self.banner.set_button_label("Scan Again")
+        self.banner.set_revealed(True)
+        self._set_controls_sensitive(False)
+
+    def _poll_device_connection(self) -> bool:
+        """Periodically monitor headset physical USB connection state and window geometry."""
+        # 1. Check window geometry changes when unmaximized
+        if not self.is_maximized():
+            cur_w = self.get_width()
+            cur_h = self.get_height()
+            if cur_w > 0 and cur_h > 0 and (cur_w != self._last_saved_w or cur_h != self._last_saved_h):
+                self._save_window_geometry()
+
+        # 2. Monitor physical USB connection state
+        if self.device is not None:
+            if not self.device.is_connected():
+                self._handle_disconnect()
+        else:
+            if not self._permission_denied and is_blackshark_connected():
+                self._connect_device()
+            elif not is_blackshark_connected():
+                self._permission_denied = False
+
+        return GLib.SOURCE_CONTINUE
+
+    def _save_window_geometry(self) -> None:
+        """Persist current window dimensions and state to configuration."""
+        try:
+            is_maximized = self.is_maximized()
+            cur_w = self.get_width()
+            cur_h = self.get_height()
+            def_w, def_h = self.get_default_size()
+
+            if is_maximized:
+                w = self._last_saved_w if self._last_saved_w > 0 else def_w
+                h = self._last_saved_h if self._last_saved_h > 0 else def_h
+            else:
+                w = cur_w if cur_w > 0 else def_w
+                h = cur_h if cur_h > 0 else def_h
+                self._last_saved_w = w
+                self._last_saved_h = h
+
+            set_window_geometry(w, h, is_maximized=is_maximized)
+        except Exception as e:
+            logger.debug("Failed to save window geometry: %s", e)
+
+    def _on_close_request(self, _win: Gtk.Window) -> bool:
+        """Handle window close request: save geometry and clean up."""
+        self._save_window_geometry()
+        return False
+
+    def _on_destroy(self, _win: Gtk.Window) -> None:
+        """Handle window destroy signal."""
+        self._save_window_geometry()
+        if self._poll_timer_id:
+            GLib.source_remove(self._poll_timer_id)
+            self._poll_timer_id = None
+        if self.device is not None:
+            self.device.close()
+            self.device = None
 
     def _on_notify_state_set(self, _switch: Gtk.Switch, state: bool) -> bool:
         """Toggle desktop notification preference."""
@@ -640,6 +748,8 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
                 self.notifier.notify_sidetone(val, enabled=enabled)
             except Exception as e:
                 print(f"[GUI] Sidetone error: {e}", file=sys.stderr)
+                if self.device is not None and not self.device.is_connected():
+                    self._handle_disconnect()
         return GLib.SOURCE_REMOVE
 
     def _on_mic_volume_value_changed(self, scale: Gtk.Scale) -> None:
@@ -657,6 +767,8 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
                 self.notifier.notify_mic_volume(val)
             except Exception as e:
                 print(f"[GUI] Mic volume error: {e}", file=sys.stderr)
+                if self.device is not None and not self.device.is_connected():
+                    self._handle_disconnect()
         return GLib.SOURCE_REMOVE
 
     def _on_mic_boost_state_set(self, _switch: Gtk.Switch, state: bool) -> bool:
@@ -667,6 +779,8 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
                 self.notifier.notify_mic_boost(state)
             except Exception as e:
                 print(f"[GUI] Mic boost error: {e}", file=sys.stderr)
+                if self.device is not None and not self.device.is_connected():
+                    self._handle_disconnect()
         return False  # Let default GTK switch handler animate
 
     def _on_eq_preset_selected(self, row: Adw.ComboRow, _param: Any) -> None:
@@ -680,6 +794,8 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
                     self.notifier.notify_eq(name, f"{bands[0]:+d}dB to {bands[-1]:+d}dB")
                 except Exception as e:
                     print(f"[GUI] EQ error: {e}", file=sys.stderr)
+                    if self.device is not None and not self.device.is_connected():
+                        self._handle_disconnect()
 
     def _on_bass_boost_value_changed(self, scale: Gtk.Scale) -> None:
         """Handle bass boost slider change with 250ms debounce."""
@@ -696,6 +812,8 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
                 self.notifier.notify_bass_boost(val)
             except Exception as e:
                 print(f"[GUI] Bass boost error: {e}", file=sys.stderr)
+                if self.device is not None and not self.device.is_connected():
+                    self._handle_disconnect()
         return GLib.SOURCE_REMOVE
 
     def _on_voice_clarity_value_changed(self, scale: Gtk.Scale) -> None:
@@ -712,6 +830,8 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
                 self.device.set_voice_clarity(val)
             except Exception as e:
                 print(f"[GUI] Voice clarity error: {e}", file=sys.stderr)
+                if self.device is not None and not self.device.is_connected():
+                    self._handle_disconnect()
         return GLib.SOURCE_REMOVE
 
     # -------------------------------------------------------------------------
@@ -816,7 +936,11 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
         self.easyeffects.apply_voice_preset(preset_key, enabled=enabled, sync=False)
 
     def do_destroy(self) -> None:
-        """Clean up hardware connection on window close."""
+        """Clean up hardware connection, timers, and save geometry on window close."""
+        self._save_window_geometry()
+        if self._poll_timer_id:
+            GLib.source_remove(self._poll_timer_id)
+            self._poll_timer_id = None
         if self.device is not None:
             self.device.close()
             self.device = None

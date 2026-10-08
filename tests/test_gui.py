@@ -177,6 +177,67 @@ class TestRzrOpenAudGUI(unittest.TestCase):
 
         win.destroy()
 
+    def test_window_geometry_remembered(self):
+        """Test that window size is remembered and loaded from config."""
+        config_mod.set_window_geometry(640, 780, is_maximized=False)
+
+        app = Adw.Application(
+            application_id="io.github.rzropenaud.test.geom",
+            flags=Gio.ApplicationFlags.NON_UNIQUE,
+        )
+        app.register(None)
+        win = RzrOpenAudWindow(application=app)
+
+        w, h = win.get_default_size()
+        self.assertEqual(w, 640)
+        self.assertEqual(h, 780)
+
+        # Trigger save
+        win.set_default_size(700, 850)
+        win._save_window_geometry()
+
+        saved_w, saved_h, _ = config_mod.get_window_geometry()
+        self.assertEqual(saved_w, 700)
+        self.assertEqual(saved_h, 850)
+
+        win.destroy()
+
+    def test_connection_monitoring_and_unplug(self):
+        """Test that unplugging headset updates UI status badge to Disconnected."""
+        from unittest.mock import MagicMock
+        app = Adw.Application(
+            application_id="io.github.rzropenaud.test.monitor",
+            flags=Gio.ApplicationFlags.NON_UNIQUE,
+        )
+        app.register(None)
+        win = RzrOpenAudWindow(application=app)
+
+        # Simulate device connected
+        mock_dev = MagicMock()
+        mock_dev.is_connected.return_value = True
+        win.device = mock_dev
+        win._device_was_connected = True
+        win.status_badge.set_label("Connected (0x1532:0x0529)")
+        win.status_badge.add_css_class("success")
+
+        # Verify polling maintains connected state
+        res = win._poll_device_connection()
+        self.assertTrue(res)
+        self.assertEqual(win.status_badge.get_label(), "Connected (0x1532:0x0529)")
+
+        # Simulate device unplug: is_connected returns False
+        mock_dev.is_connected.return_value = False
+        res = win._poll_device_connection()
+        self.assertTrue(res)
+
+        # Status badge must now say Disconnected
+        self.assertEqual(win.status_badge.get_label(), "Disconnected")
+        self.assertIsNone(win.device)
+        self.assertFalse(win._device_was_connected)
+        self.assertTrue(win.banner.get_revealed())
+
+        win.destroy()
+
     def test_desktop_file_exists(self):
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         desktop_path = os.path.join(root, "data", "rzropenaud.desktop")

@@ -94,7 +94,8 @@ systemctl --user enable --now easyeffects.service
 - **Audio Enhancements:** Sliders for DSP bass boost and vocal clarity filters.
 - **Voice Changer:** Dedicated card with master toggle switch, Voice FX Sidetone switch (to monitor altered voices in your headset), and 7 interactive push buttons with custom vector icons for instantly switching presets.
 - **Preferences:** Persistent toggle for desktop alerts (disabled by default to avoid distracting popups; device connection and disconnection alerts are cleanly delivered).
-- **Device Status:** Connection state, firmware version, and hardware serial number.
+- **Device Status & Hotplug Monitoring:** Real-time USB connection tracking that dynamically updates the connected badge and enables/disables controls when the headset is unplugged or re-plugged.
+- **Window Geometry Persistence:** Automatically remembers and restores window dimensions and maximized state across restarts.
 - **In-Window Alert Banners:** Helpful permission notifications and retry buttons if udev permissions are missing.
 
 ### Launching the GUI

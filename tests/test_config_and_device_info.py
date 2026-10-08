@@ -123,6 +123,35 @@ class TestConfigAndDeviceInfo(unittest.TestCase):
         config_mod.set_notifications_enabled(False)
         self.assertFalse(config_mod.get_notifications_enabled())
 
+    def test_window_geometry_persistence(self):
+        # Default geometry
+        w, h, max_state = config_mod.get_window_geometry()
+        self.assertEqual(w, 560)
+        self.assertEqual(h, 720)
+        self.assertFalse(max_state)
+
+        # Custom geometry
+        config_mod.set_window_geometry(680, 840, is_maximized=False)
+        w, h, max_state = config_mod.get_window_geometry()
+        self.assertEqual(w, 680)
+        self.assertEqual(h, 840)
+        self.assertFalse(max_state)
+
+        # Maximized state
+        config_mod.set_window_geometry(680, 840, is_maximized=True)
+        w, h, max_state = config_mod.get_window_geometry()
+        self.assertEqual(w, 680)
+        self.assertEqual(h, 840)
+        self.assertTrue(max_state)
+
+    def test_device_is_connected(self):
+        from rzropenaud_io.device import is_blackshark_connected
+        with patch("hid.enumerate", return_value=[]):
+            self.assertFalse(is_blackshark_connected())
+
+        with patch("hid.enumerate", return_value=[{"interface_number": 3}]):
+            self.assertTrue(is_blackshark_connected())
+
 
 if __name__ == "__main__":
     unittest.main()
