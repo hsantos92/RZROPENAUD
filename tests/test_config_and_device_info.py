@@ -76,6 +76,8 @@ class TestConfigAndDeviceInfo(unittest.TestCase):
         self.assertEqual(info["serial_number"], "00000000 (Hardware Dongle Default)")
         self.assertEqual(info["serial_raw"], "00000000")
         self.assertFalse(info["is_custom_serial"])
+        self.assertIn("surround_7_1_enabled", info)
+        self.assertIn("surround_7_1_active", info)
 
     def test_device_info_with_custom_serial(self):
         config_mod.set_custom_serial("PM2047H9999999")

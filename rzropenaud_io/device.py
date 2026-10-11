@@ -481,7 +481,17 @@ class BlackSharkV2:
             "voice_preset": self.easyeffects.get_active_voice_preset(),
             "voice_fx_enabled": self.easyeffects.voice_enabled,
             "voice_monitor_enabled": self.easyeffects.get_microphone_monitoring(),
+            "surround_7_1_enabled": False,
+            "surround_7_1_active": False,
         }
+
+        try:
+            from rzropenaud_io.surround import is_surround_active
+            from rzropenaud_io.config import get_surround_7_1_enabled
+            info["surround_7_1_enabled"] = get_surround_7_1_enabled()
+            info["surround_7_1_active"] = is_surround_active()
+        except Exception:
+            pass
 
         # 1. Determine Firmware Version
         # Try standard Razer report (Command Class 0x00, ID 0x81)

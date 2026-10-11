@@ -212,3 +212,25 @@ def set_window_geometry(width: int, height: int, is_maximized: bool = False) -> 
     }
     save_config(cfg)
 
+
+def get_surround_7_1_enabled() -> bool:
+    """Retrieve whether 7.1 Virtual Surround Sound is enabled.
+
+    Returns:
+        True if enabled in config, False otherwise.
+    """
+    cfg = load_config()
+    return bool(cfg.get("surround_7_1_enabled", False))
+
+
+def set_surround_7_1_enabled(enabled: bool) -> None:
+    """Set whether 7.1 Virtual Surround Sound is enabled.
+
+    Args:
+        enabled: Boolean state to persist.
+    """
+    cfg = load_config()
+    cfg["surround_7_1_enabled"] = bool(enabled)
+    save_config(cfg)
+
+

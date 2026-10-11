@@ -5,6 +5,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import gi
 
@@ -91,6 +92,13 @@ class TestRzrOpenAudGUI(unittest.TestCase):
         for key in ["off", "deep", "female", "child", "robotic", "monster", "radio"]:
             self.assertIn(key, win.voice_buttons)
 
+        # Verify Audio Enhancements
+        self.assertIsNotNone(win.enhancements_group)
+        self.assertIsNotNone(win.bass_boost_row)
+        self.assertIsNotNone(win.voice_clarity_row)
+        self.assertIsNotNone(win.surround_row)
+        self.assertIsNotNone(win.surround_switch)
+
         # Clean up window
         win.destroy()
 
@@ -174,6 +182,19 @@ class TestRzrOpenAudGUI(unittest.TestCase):
         win.notify_switch.set_active(False)
         win._on_notify_state_set(win.notify_switch, False)
         self.assertFalse(get_notifications_enabled())
+
+        # 10. 7.1 Virtual Surround switch toggle and persistence
+        with patch("rzropenaud_io.gui.enable_surround", return_value=True), \
+             patch("rzropenaud_io.gui.is_surround_active", return_value=True):
+            win.surround_switch.set_active(True)
+            win._on_surround_switch_state_set(win.surround_switch, True)
+            self.assertTrue(config_mod.get_surround_7_1_enabled())
+
+        with patch("rzropenaud_io.gui.disable_surround", return_value=True), \
+             patch("rzropenaud_io.gui.is_surround_active", return_value=False):
+            win.surround_switch.set_active(False)
+            win._on_surround_switch_state_set(win.surround_switch, False)
+            self.assertFalse(config_mod.get_surround_7_1_enabled())
 
         win.destroy()
 

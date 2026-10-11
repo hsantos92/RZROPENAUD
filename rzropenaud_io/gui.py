@@ -17,16 +17,23 @@ from rzropenaud_io.config import (
     clear_custom_serial,
     get_custom_serial,
     get_notifications_enabled,
+    get_surround_7_1_enabled,
     get_voice_fx_enabled,
     get_voice_monitor_enabled,
     get_voice_preset,
     get_window_geometry,
     set_custom_serial,
     set_notifications_enabled,
+    set_surround_7_1_enabled,
     set_voice_fx_enabled,
     set_voice_monitor_enabled,
     set_voice_preset,
     set_window_geometry,
+)
+from rzropenaud_io.surround import (
+    disable_surround,
+    enable_surround,
+    is_surround_active,
 )
 from rzropenaud_io.constants import (
     BLACKSHARK_V2_PID,
@@ -306,6 +313,22 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
         self.voice_clarity_scale.connect("value-changed", self._on_voice_clarity_value_changed)
         self.voice_clarity_row.add_suffix(self.voice_clarity_scale)
         self.enhancements_group.add(self.voice_clarity_row)
+
+        # 7.1 Virtual Surround Sound Switch
+        self.surround_row = Adw.ActionRow(
+            title="7.1 Virtual Surround Sound",
+            subtitle="PipeWire HRTF binaural spatializer (8-channel virtual sink for games and media)",
+        )
+        self.surround_row.add_prefix(Gtk.Image.new_from_icon_name("audio-speakers-symbolic"))
+
+        self.surround_switch = Gtk.Switch()
+        self.surround_switch.set_valign(Gtk.Align.CENTER)
+        surround_init = get_surround_7_1_enabled() or is_surround_active()
+        self.surround_switch.set_active(surround_init)
+        self.surround_switch.connect("state-set", self._on_surround_switch_state_set)
+        self.surround_row.add_suffix(self.surround_switch)
+        self.surround_row.set_activatable_widget(self.surround_switch)
+        self.enhancements_group.add(self.surround_row)
 
         # --- Voice Changer Group ---
         self.voice_group = Adw.PreferencesGroup(
@@ -833,6 +856,25 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
                 if self.device is not None and not self.device.is_connected():
                     self._handle_disconnect()
         return GLib.SOURCE_REMOVE
+
+    def _on_surround_switch_state_set(self, switch: Gtk.Switch, state: bool) -> bool:
+        """Handle user toggling 7.1 Virtual Surround Sound switch."""
+        set_surround_7_1_enabled(state)
+        if state:
+            success = enable_surround()
+            if success or is_surround_active():
+                self.notifier.send(
+                    "Razer BlackShark V2",
+                    "7.1 Virtual Surround enabled (PipeWire HRTF spatializer active)",
+                )
+            else:
+                self.banner.set_title("Could not enable 7.1 Virtual Surround. Ensure PipeWire is active.")
+                self.banner.set_revealed(True)
+                switch.set_active(False)
+        else:
+            disable_surround()
+            self.notifier.send("Razer BlackShark V2", "7.1 Virtual Surround disabled")
+        return False
 
     # -------------------------------------------------------------------------
     # Voice Changer Event Handlers

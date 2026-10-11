@@ -15,6 +15,7 @@
 - **Hardware Sidetone (Mic Monitoring):** Configure zero-latency hardware sidetone level (`0` to `100%`) or toggle it on/off.
 - **Microphone Volume & Boost:** Adjust mic input gain and hardware boost directly on the audio chip.
 - **10-Band Equalizer:** Apply built-in tuned presets (`game`, `movie`, `music`, `voice`, `esports`, `flat`, `bass-boost`) or custom dB values across 10 bands (31Hz to 16kHz).
+- **7.1 Virtual Surround Sound:** Native PipeWire HRTF binaural spatializer exposing an 8-channel virtual sink (`Razer BlackShark V2 7.1 Virtual Surround`) convolved in real-time with the MIT KEMAR dummy-head HRTF profile downmixed to stereo for games and immersive media.
 - **Real-Time Voice Changer:** Native low-latency microphone voice effects via PipeWire & EasyEffects with tuned DSP chains (`deep`, `female`, `child`, `robotic`, `monster`, `radio`, `off`).
 - **Razer Standard 90-Byte HID Protocol:** Full implementation of OpenRazer's 90-byte packet structure with dynamic XOR checksum calculation and status acknowledgement verification.
 - **Direct DSP Memory Mapping:** High-fidelity register write fallback (Report ID `0x04`) reverse-engineered from Razer Synapse USB traffic captures.
@@ -27,10 +28,10 @@
 
 ### 1. Install System Dependencies
 
-On Arch Linux, install `python-hidapi` (for USB HID communication), `python-gobject`, `gtk4`, `libadwaita` (for the native GNOME GUI), `libnotify` (for desktop alerts), and `easyeffects` with DSP plugins (for headphone playback EQ and bass boost):
+On Arch Linux, install `python-hidapi` (for USB HID communication), `python-gobject`, `gtk4`, `libadwaita` (for the native GNOME GUI), `libnotify` (for desktop alerts), `libmysofa` (for 7.1 virtual surround HRTF profiles), and `easyeffects` with DSP plugins (for headphone playback EQ and bass boost):
 
 ```bash
-sudo pacman -S python-gobject gtk4 libadwaita python-hidapi libnotify easyeffects lsp-plugins-lv2 calf
+sudo pacman -S python-gobject gtk4 libadwaita python-hidapi libnotify libmysofa easyeffects lsp-plugins-lv2 calf
 ```
 
 ### 2. Configure Udev Rules (Rootless Access)
@@ -91,7 +92,7 @@ systemctl --user enable --now easyeffects.service
 `RZROPENAUD-IO` includes a modern native GNOME desktop interface built using `PyGObject` (GTK4) and `libadwaita`:
 
 - **Audio Controls:** Hardware sidetone slider, microphone volume slider, hardware mic boost toggle, and 10-band equalizer preset dropdown.
-- **Audio Enhancements:** Sliders for DSP bass boost and vocal clarity filters.
+- **Audio Enhancements:** Sliders for DSP bass boost and vocal clarity filters, plus a dedicated toggle for **7.1 Virtual Surround Sound** (PipeWire HRTF binaural spatializer).
 - **Voice Changer:** Dedicated card with master toggle switch, Voice FX Sidetone switch (to monitor altered voices in your headset), and 7 interactive push buttons with custom vector icons for instantly switching presets.
 - **Preferences:** Persistent toggle for desktop alerts (disabled by default to avoid distracting popups; device connection and disconnection alerts are cleanly delivered).
 - **Device Status & Hotplug Monitoring:** Real-time USB connection tracking that dynamically updates the connected badge and enables/disables controls when the headset is unplugged or re-plugged.
@@ -122,12 +123,26 @@ update-desktop-database ~/.local/share/applications/
 ```
 usage: rzropenaud-io [-h] [--mic-volume 0-100] [--sidetone 0-100] [--eq PRESET|BANDS]
                      [--mic-boost {on,off}] [--bass-boost 0-100] [--voice-clarity 0-100]
+                     [--surround-7-1 {on,off}]
                      [--voice-fx PRESET] [--voice-sidetone {on,off}] [--list-voice-fx]
                      [--set-serial SERIAL] [--clear-serial]
                      [-s] [--notify | --no-notify] [--direct] [-v]
 ```
 
 ### Examples
+
+#### 7.1 Virtual Surround Sound (PipeWire HRTF Spatializer)
+```bash
+# Enable 7.1 Virtual Surround Sound (starts 8-channel PipeWire filter-chain)
+rzropenaud-io --surround-7-1 on
+
+# Check status to verify 8-channel virtual sink is active
+rzropenaud-io --status
+
+# Disable 7.1 Virtual Surround Sound
+rzropenaud-io --surround-7-1 off
+```
+When enabled, an 8-channel virtual sink (`Razer BlackShark V2 7.1 Virtual Surround`) is registered with PipeWire. Games (e.g. Steam, CS2, Cyberpunk 2077) and media players detect it as a native 7.1 surround output device (`FL FR FC LFE RL RR SL SR`). Positional audio is convolved in real-time with the MIT KEMAR dummy-head HRTF profile and delivered as immersive binaural 3D audio through your headset.
 
 #### Real-Time Microphone Voice Changer & Sidetone Monitoring
 ```bash

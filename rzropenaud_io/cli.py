@@ -106,6 +106,11 @@ Examples:
         dest="voice_sidetone",
         help="Enable or disable Voice FX sidetone / monitoring (listen to voice effects in your headset).",
     )
+    parser.add_argument(
+        "--surround-7-1",
+        choices=["on", "off"],
+        help="Enable or disable 7.1 Virtual Surround Sound (PipeWire HRTF binaural spatializer).",
+    )
 
     # Serial Number Configuration
     parser.add_argument(
@@ -176,6 +181,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         args.voice_clarity is not None,
         args.voice_fx is not None,
         args.voice_sidetone is not None,
+        args.surround_7_1 is not None,
         args.list_voice_fx,
         args.set_serial is not None,
         args.clear_serial,
@@ -191,6 +197,21 @@ def main(argv: Optional[List[str]] = None) -> int:
         for key, info in VOICE_PRESETS.items():
             print(f"  {key:<10} - {info['title']}: {info['subtitle']}")
         return 0
+
+    # Handle 7.1 Virtual Surround Sound
+    if args.surround_7_1 is not None:
+        from rzropenaud_io.surround import disable_surround, enable_surround, is_surround_active
+        if args.surround_7_1 == "on":
+            success = enable_surround()
+            if success or is_surround_active():
+                print("✓ 7.1 Virtual Surround Sound enabled (Razer BlackShark V2 8-channel virtual sink active)")
+                notifier.send("Razer BlackShark V2", "7.1 Virtual Surround enabled (PipeWire HRTF)")
+            else:
+                print("✗ Failed to enable 7.1 Virtual Surround Sound. Check PipeWire / libmysofa installation.", file=sys.stderr)
+        else:
+            disable_surround()
+            print("✓ 7.1 Virtual Surround Sound disabled")
+            notifier.send("Razer BlackShark V2", "7.1 Virtual Surround disabled")
 
     # Handle voice preset changes
     if args.voice_fx is not None:
@@ -254,6 +275,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 print(f"Voice Changer:    {voice_status}")
                 voice_mon = "Enabled" if info.get("voice_monitor_enabled") else "Disabled"
                 print(f"Voice Sidetone:   {voice_mon}")
+                surround_status = "Enabled (PipeWire HRTF 8-Channel)" if info.get("surround_7_1_active") else "Disabled"
+                print(f"7.1 Surround:     {surround_status}")
                 print("==================================================")
 
             # Apply mic volume
