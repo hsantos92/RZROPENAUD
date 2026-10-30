@@ -1,21 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
   <defs>
     <linearGradient id="radioGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ff7800"/>
-      <stop offset="100%" stop-color="#c64600"/>
+      <stop offset="0%" stop-color="#44D62C"/>
+      <stop offset="100%" stop-color="#289E16"/>
     </linearGradient>
   </defs>
   <!-- Long Antenna -->
-  <line x1="16" y1="4" x2="16" y2="14" stroke="#77767b" stroke-width="3" stroke-linecap="round"/>
-  <circle cx="16" cy="4" r="2" fill="#77767b"/>
+  <line x1="16" y1="4" x2="16" y2="14" stroke="#8C9298" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="16" cy="4" r="2.2" fill="#44D62C"/>
   <!-- Volume Knob -->
-  <rect x="28" y="10" width="6" height="4" rx="1" fill="#77767b"/>
+  <rect x="28" y="10" width="6" height="4" rx="1" fill="#44D62C"/>
   <!-- Radio chassis -->
-  <rect x="12" y="14" width="24" height="30" rx="3" fill="#241f31" stroke="url(#radioGrad)" stroke-width="2.5"/>
+  <rect x="12" y="14" width="24" height="30" rx="3" fill="#17191C" stroke="url(#radioGrad)" stroke-width="2.2"/>
   <!-- Status LED -->
-  <circle cx="17" cy="19" r="1.5" fill="#33d17a"/>
+  <circle cx="17" cy="19" r="1.8" fill="#44D62C"/>
   <!-- Screen / channel display -->
-  <rect x="22" y="17" width="10" height="5" rx="1" fill="#3a3935"/>
+  <rect x="22" y="17" width="10" height="5" rx="1" fill="#252B25" stroke="#44D62C" stroke-width="0.8"/>
   <!-- Speaker grill slots -->
   <line x1="16" y1="26" x2="32" y2="26" stroke="url(#radioGrad)" stroke-width="2" stroke-linecap="round"/>
   <line x1="16" y1="30" x2="32" y2="30" stroke="url(#radioGrad)" stroke-width="2" stroke-linecap="round"/>

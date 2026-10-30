@@ -91,6 +91,16 @@ class TestRzrOpenAudGUI(unittest.TestCase):
         for key in ["off", "deep", "female", "child", "robotic", "monster", "radio"]:
             self.assertIn(key, win.voice_buttons)
 
+        # Verify Futuristic openSyn Hero & 10-Band EQ Graph components
+        self.assertEqual(win.opensyn_lbl.get_label(), "openSyn")
+        self.assertIsNotNone(win.subnav_bar)
+        self.assertEqual(len(win.nav_buttons), 6)
+        self.assertIsNotNone(win.hero_group)
+        self.assertIsNotNone(win.hero_image)
+        self.assertIsNotNone(win.eq_visual_group)
+        self.assertIsNotNone(win.eq_drawing_area)
+        self.assertEqual(len(win._eq_preset_buttons), 7)
+
         # Clean up window
         win.destroy()
 
@@ -174,6 +184,23 @@ class TestRzrOpenAudGUI(unittest.TestCase):
         win.notify_switch.set_active(False)
         win._on_notify_state_set(win.notify_switch, False)
         self.assertFalse(get_notifications_enabled())
+
+        # 10. Visual EQ preset buttons, Cairo graph draw, and Sub-Nav bar
+        win._eq_preset_buttons["music"].set_active(True)
+        self.assertEqual(win.eq_combo_row.get_selected(), win.preset_keys.index("music"))
+        win._on_eq_reset_clicked(win.eq_reset_btn)
+        self.assertEqual(win.eq_combo_row.get_selected(), win.preset_keys.index("flat"))
+
+        import cairo
+        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, 600, 210)
+        cr = cairo.Context(surface)
+        win._draw_eq_graph(win.eq_drawing_area, cr, 600, 210)
+
+        win.nav_buttons["sound"].set_active(True)
+        self.assertTrue(win.eq_visual_group.get_visible())
+        self.assertFalse(win.voice_group.get_visible())
+        win.nav_buttons["all"].set_active(True)
+        self.assertTrue(win.voice_group.get_visible())
 
         win.destroy()
 
