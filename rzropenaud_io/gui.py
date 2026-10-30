@@ -184,24 +184,29 @@ headerbar windowtitle title {
     padding: 3px;
 }
 
-.razer-mode-pill-active {
-    background-color: #44D62C;
-    color: #0A0A0A;
-    border-radius: 16px;
-    padding: 4px 16px;
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 1px;
-}
-
-.razer-mode-pill-inactive {
-    background-color: transparent;
+.razer-mode-pill-btn {
+    background: transparent;
     color: #AAAAAA;
+    border: none;
     border-radius: 16px;
-    padding: 4px 16px;
+    padding: 5px 16px;
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 1px;
+    box-shadow: none;
+    transition: all 150ms ease;
+}
+
+.razer-mode-pill-btn:hover {
+    color: #FFFFFF;
+    background-color: #1A2219;
+}
+
+.razer-mode-pill-btn:checked {
+    background-color: #44D62C;
+    color: #0A0A0A;
+    font-weight: 800;
+    box-shadow: 0 0 10px rgba(68, 214, 44, 0.35);
 }
 
 /* --- Status Badges --- */
@@ -293,17 +298,7 @@ comborow image {
     letter-spacing: 1.4px;
 }
 
-.razer-sub-pill-on {
-    background-color: #44D62C;
-    color: #0A0A0A;
-    font-weight: 800;
-    font-size: 10px;
-    letter-spacing: 0.9px;
-    padding: 3px 10px;
-    border-radius: 2px;
-}
-
-.razer-sub-pill-off {
+.razer-sub-pill-btn {
     background-color: #181818;
     color: #888888;
     border: 1px solid #2E2E2E;
@@ -312,6 +307,21 @@ comborow image {
     letter-spacing: 0.9px;
     padding: 3px 10px;
     border-radius: 2px;
+    box-shadow: none;
+    transition: all 140ms ease;
+}
+
+.razer-sub-pill-btn:hover {
+    color: #FFFFFF;
+    border-color: #44D62C;
+    background-color: #1A2219;
+}
+
+.razer-sub-pill-btn:checked {
+    background-color: #44D62C;
+    color: #0A0A0A;
+    border: 1px solid #44D62C;
+    font-weight: 800;
 }
 
 /* --- EQ Preset Selector Buttons (Matching Synapse Screenshot 1) --- */
@@ -507,13 +517,17 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
         self._permission_denied: bool = False
         self._poll_timer_id: Optional[int] = None
 
-        # Equalizer interactive curve state
+        # Equalizer interactive curve & DSP mode state
         self.current_eq_bands: List[int] = list(EQ_PRESETS["flat"])
         self._dragging_eq_band: Optional[int] = None
         self._hovered_eq_band: Optional[int] = None
         self._eq_preset_buttons: Dict[str, Gtk.ToggleButton] = {}
         self._updating_eq_ui: bool = False
         self._custom_eq_timer: Optional[int] = None
+        self._last_standard_eq_preset: str = "flat"
+        self._dsp_engine_enabled: bool = True
+        self._updating_mode_ui: bool = False
+        self._saved_hw_sidetone_before_voice: Optional[int] = None
 
         # Sub-navigation tab buttons
         self.nav_buttons: Dict[str, Gtk.ToggleButton] = {}
@@ -685,18 +699,29 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
         self.hero_image.set_halign(Gtk.Align.CENTER)
         hero_card.append(self.hero_image)
 
-        # Mode Pills under Headset (matching STEREO | THX SPATIAL AUDIO pill bar)
+        # Interactive Mode Pill Toggle under Headset (24-BIT STEREO DAC | RAZER AUDIO DSP ENGINE)
         mode_pill_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         mode_pill_bar.add_css_class("razer-mode-pill-bar")
         mode_pill_bar.set_halign(Gtk.Align.CENTER)
 
-        stereo_pill = Gtk.Label(label="24-BIT STEREO DAC")
-        stereo_pill.add_css_class("razer-mode-pill-inactive")
-        mode_pill_bar.append(stereo_pill)
+        self.mode_stereo_btn = Gtk.ToggleButton(label="24-BIT STEREO DAC")
+        self.mode_stereo_btn.add_css_class("razer-mode-pill-btn")
+        self.mode_stereo_btn.set_tooltip_text(
+            "Direct Stereo Bypass: Pure uncolored 24-bit stereo audio (bypasses EQ & DSP enhancements)"
+        )
+        mode_pill_bar.append(self.mode_stereo_btn)
 
-        dsp_pill = Gtk.Label(label="RAZER AUDIO DSP ENGINE")
-        dsp_pill.add_css_class("razer-mode-pill-active")
-        mode_pill_bar.append(dsp_pill)
+        self.mode_dsp_btn = Gtk.ToggleButton(label="RAZER AUDIO DSP ENGINE")
+        self.mode_dsp_btn.add_css_class("razer-mode-pill-btn")
+        self.mode_dsp_btn.set_group(self.mode_stereo_btn)
+        self.mode_dsp_btn.set_active(True)
+        self.mode_dsp_btn.set_tooltip_text(
+            "Active DSP Engine: Enables 10-band Equalizer, Bass Boost, and Voice Clarity processing"
+        )
+        mode_pill_bar.append(self.mode_dsp_btn)
+
+        self.mode_stereo_btn.connect("toggled", self._on_audio_mode_pill_toggled, "stereo")
+        self.mode_dsp_btn.connect("toggled", self._on_audio_mode_pill_toggled, "dsp")
 
         hero_card.append(mode_pill_bar)
         self.hero_group.add(hero_card)
@@ -720,19 +745,26 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
         eq_inner.set_margin_start(18)
         eq_inner.set_margin_end(18)
 
-        # Card Header Row: AUDIO-EQUALIZER + Mode Badges + Reset Button
+        # Card Header Row: AUDIO-EQUALIZER + Interactive Mode Toggle (STANDARD | E-SPORT) + Reset Button
         eq_hdr_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         eq_title = Gtk.Label(label="AUDIO-EQUALIZER")
         eq_title.add_css_class("razer-card-title")
         eq_hdr_row.append(eq_title)
 
-        std_badge = Gtk.Label(label="STANDARD")
-        std_badge.add_css_class("razer-sub-pill-on")
-        eq_hdr_row.append(std_badge)
+        self.eq_mode_standard_btn = Gtk.ToggleButton(label="STANDARD")
+        self.eq_mode_standard_btn.add_css_class("razer-sub-pill-btn")
+        self.eq_mode_standard_btn.set_active(True)
+        self.eq_mode_standard_btn.set_tooltip_text("Switch to Standard Equalizer mode")
+        eq_hdr_row.append(self.eq_mode_standard_btn)
 
-        esp_badge = Gtk.Label(label="E-SPORT")
-        esp_badge.add_css_class("razer-sub-pill-off")
-        eq_hdr_row.append(esp_badge)
+        self.eq_mode_esport_btn = Gtk.ToggleButton(label="E-SPORT")
+        self.eq_mode_esport_btn.add_css_class("razer-sub-pill-btn")
+        self.eq_mode_esport_btn.set_group(self.eq_mode_standard_btn)
+        self.eq_mode_esport_btn.set_tooltip_text("Switch to competitive E-Sport Equalizer profile")
+        eq_hdr_row.append(self.eq_mode_esport_btn)
+
+        self.eq_mode_standard_btn.connect("toggled", self._on_eq_mode_badge_toggled, "standard")
+        self.eq_mode_esport_btn.connect("toggled", self._on_eq_mode_badge_toggled, "esport")
 
         eq_hdr_spacer = Gtk.Box()
         eq_hdr_spacer.set_hexpand(True)
@@ -1277,6 +1309,15 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
     def _apply_custom_eq_bands(self) -> bool:
         """Send custom dragged 10-band EQ curve to device & EasyEffects."""
         self._custom_eq_timer = None
+        if not self._dsp_engine_enabled:
+            self._updating_mode_ui = True
+            try:
+                self.mode_dsp_btn.set_active(True)
+                self._dsp_engine_enabled = True
+                self.eq_visual_group.set_opacity(1.0)
+                self.enhancements_group.set_opacity(1.0)
+            finally:
+                self._updating_mode_ui = False
         if self.device is not None:
             try:
                 bands_str = ",".join(str(b) for b in self.current_eq_bands)
@@ -1284,6 +1325,47 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
             except Exception as e:
                 print(f"[GUI] Custom EQ error: {e}", file=sys.stderr)
         return GLib.SOURCE_REMOVE
+
+    def _on_audio_mode_pill_toggled(self, btn: Gtk.ToggleButton, mode: str) -> None:
+        """Toggle between 24-Bit Stereo DAC (Direct Bypass) and Razer Audio DSP Engine."""
+        if self._updating_mode_ui or not btn.get_active():
+            return
+
+        if mode == "stereo":
+            self._dsp_engine_enabled = False
+            self.eq_visual_group.set_opacity(0.60)
+            self.enhancements_group.set_opacity(0.60)
+            if self.device is not None:
+                try:
+                    self.device.set_equalizer("flat", use_direct=True)
+                    self.device.set_bass_boost(0)
+                    self.device.set_voice_clarity(0)
+                except Exception as e:
+                    print(f"[GUI] Stereo DAC bypass error: {e}", file=sys.stderr)
+        else:
+            self._dsp_engine_enabled = True
+            self.eq_visual_group.set_opacity(1.0)
+            self.enhancements_group.set_opacity(1.0)
+            if self.device is not None:
+                try:
+                    bands_str = ",".join(str(b) for b in self.current_eq_bands)
+                    self.device.set_equalizer(bands_str, use_direct=True)
+                    self.device.set_bass_boost(int(self.bass_boost_scale.get_value()))
+                    self.device.set_voice_clarity(int(self.voice_clarity_scale.get_value()))
+                except Exception as e:
+                    print(f"[GUI] DSP Engine restore error: {e}", file=sys.stderr)
+
+    def _on_eq_mode_badge_toggled(self, btn: Gtk.ToggleButton, mode: str) -> None:
+        """Handle clicking STANDARD or E-SPORT in the AUDIO-EQUALIZER header."""
+        if self._updating_eq_ui or not btn.get_active():
+            return
+
+        if mode == "esport":
+            if "esports" in self.preset_keys:
+                self.eq_combo_row.set_selected(self.preset_keys.index("esports"))
+        else:
+            target = self._last_standard_eq_preset if self._last_standard_eq_preset in self.preset_keys else "flat"
+            self.eq_combo_row.set_selected(self.preset_keys.index(target))
 
     def _on_eq_preset_btn_toggled(self, btn: Gtk.ToggleButton, preset_idx: int) -> None:
         """Sync visual preset button click with eq_combo_row."""
@@ -1340,7 +1422,12 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
             # Sync initial hardware values into GUI sliders
             try:
                 _on, st_vol = dev.get_sidetone()
-                self.sidetone_scale.set_value(st_vol)
+                if self.voice_enabled and self.voice_monitor_enabled:
+                    self._saved_hw_sidetone_before_voice = st_vol if st_vol > 0 else 50
+                    self.sidetone_scale.set_value(0)
+                    dev.set_sidetone(0, enabled=False)
+                else:
+                    self.sidetone_scale.set_value(st_vol)
             except Exception:
                 pass
 
@@ -1673,13 +1760,29 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
                 self.current_eq_bands = list(EQ_PRESETS[preset_name])
                 self.eq_drawing_area.queue_draw()
 
-            # Sync top visual preset button
-            if preset_name in self._eq_preset_buttons:
-                self._updating_eq_ui = True
-                try:
+            # Sync top visual preset button and STANDARD | E-SPORT header toggle
+            self._updating_eq_ui = True
+            try:
+                if preset_name in self._eq_preset_buttons:
                     self._eq_preset_buttons[preset_name].set_active(True)
+                if preset_name == "esports":
+                    self.eq_mode_esport_btn.set_active(True)
+                else:
+                    self._last_standard_eq_preset = preset_name
+                    self.eq_mode_standard_btn.set_active(True)
+            finally:
+                self._updating_eq_ui = False
+
+            # Ensure DSP engine mode is active when selecting an EQ preset
+            if not self._dsp_engine_enabled:
+                self._updating_mode_ui = True
+                try:
+                    self.mode_dsp_btn.set_active(True)
+                    self._dsp_engine_enabled = True
+                    self.eq_visual_group.set_opacity(1.0)
+                    self.enhancements_group.set_opacity(1.0)
                 finally:
-                    self._updating_eq_ui = False
+                    self._updating_mode_ui = False
 
             if self.device is not None:
                 try:
@@ -1693,6 +1796,15 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
     def _on_bass_boost_value_changed(self, scale: Gtk.Scale) -> None:
         """Handle bass boost slider change with 250ms debounce."""
         val = int(scale.get_value())
+        if val > 0 and not self._dsp_engine_enabled:
+            self._updating_mode_ui = True
+            try:
+                self.mode_dsp_btn.set_active(True)
+                self._dsp_engine_enabled = True
+                self.eq_visual_group.set_opacity(1.0)
+                self.enhancements_group.set_opacity(1.0)
+            finally:
+                self._updating_mode_ui = False
         if self._bass_boost_timer:
             GLib.source_remove(self._bass_boost_timer)
         self._bass_boost_timer = GLib.timeout_add(250, self._apply_bass_boost, val)
@@ -1712,6 +1824,15 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
     def _on_voice_clarity_value_changed(self, scale: Gtk.Scale) -> None:
         """Handle voice clarity slider change with 70ms debounce."""
         val = int(scale.get_value())
+        if val > 0 and not self._dsp_engine_enabled:
+            self._updating_mode_ui = True
+            try:
+                self.mode_dsp_btn.set_active(True)
+                self._dsp_engine_enabled = True
+                self.eq_visual_group.set_opacity(1.0)
+                self.enhancements_group.set_opacity(1.0)
+            finally:
+                self._updating_mode_ui = False
         if self._voice_clarity_timer:
             GLib.source_remove(self._voice_clarity_timer)
         self._voice_clarity_timer = GLib.timeout_add(70, self._apply_voice_clarity, val)
@@ -1730,6 +1851,30 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
     # -------------------------------------------------------------------------
     # Voice Changer Event Handlers
     # -------------------------------------------------------------------------
+
+    def _sync_sidetone_with_voice_fx(self) -> None:
+        """Mute hardware Sidetone (Mic Monitoring) to 0 when Voice FX Sidetone is active."""
+        voice_sidetone_active = self.voice_enabled and self.voice_monitor_enabled
+        if voice_sidetone_active:
+            cur_hw_val = int(self.sidetone_scale.get_value())
+            if cur_hw_val > 0:
+                self._saved_hw_sidetone_before_voice = cur_hw_val
+            if self._sidetone_timer:
+                GLib.source_remove(self._sidetone_timer)
+                self._sidetone_timer = None
+            if cur_hw_val != 0:
+                self.sidetone_scale.set_value(0)
+            self._apply_sidetone(0)
+            self.sidetone_scale.set_sensitive(False)
+            self.sidetone_row.set_subtitle("Muted (0%) while Voice FX Sidetone is active")
+        else:
+            self.sidetone_scale.set_sensitive(True)
+            self.sidetone_row.set_subtitle("Zero-latency hardware microphone playback into headset")
+            if self._saved_hw_sidetone_before_voice is not None:
+                restore_val = self._saved_hw_sidetone_before_voice
+                self._saved_hw_sidetone_before_voice = None
+                self.sidetone_scale.set_value(restore_val)
+                self._apply_sidetone(restore_val)
 
     def _sync_voice_ui(self) -> None:
         """Synchronize voice changer UI components with current state."""
@@ -1760,6 +1905,9 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
 
             # Enable/disable push buttons depending on whether master switch is on
             self.voice_flowbox.set_sensitive(self.voice_enabled)
+
+            # Ensure hardware Sidetone is muted (0) whenever Voice FX Sidetone is active
+            self._sync_sidetone_with_voice_fx()
 
         finally:
             self._updating_voice_ui = False
@@ -1802,6 +1950,7 @@ class RzrOpenAudWindow(Adw.ApplicationWindow):
         self.voice_monitor_enabled = state
         set_voice_monitor_enabled(state)
         self.easyeffects.set_microphone_monitoring(state and self.voice_enabled)
+        self._sync_sidetone_with_voice_fx()
         return False
 
     def _on_voice_button_toggled(self, btn: Gtk.ToggleButton, preset_key: str) -> None:

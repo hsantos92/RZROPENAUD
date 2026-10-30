@@ -169,12 +169,17 @@ class TestRzrOpenAudGUI(unittest.TestCase):
         win.voice_buttons["off"].set_active(True)
         self.assertFalse(win.voice_enabled)
 
-        # Test Voice FX Sidetone switch
+        # Test Voice FX Sidetone switch & hardware sidetone auto-muting to 0
+        win.sidetone_scale.set_value(75.0)
         win.voice_master_switch.set_active(True)
         win.voice_sidetone_switch.set_active(True)
         self.assertTrue(win.voice_monitor_enabled)
+        self.assertEqual(win.sidetone_scale.get_value(), 0.0)
+        self.assertFalse(win.sidetone_scale.get_sensitive())
         win.voice_sidetone_switch.set_active(False)
         self.assertFalse(win.voice_monitor_enabled)
+        self.assertEqual(win.sidetone_scale.get_value(), 75.0)
+        self.assertTrue(win.sidetone_scale.get_sensitive())
 
         # 9. Notification switch toggle and persistence
         win.notify_switch.set_active(True)
@@ -185,9 +190,26 @@ class TestRzrOpenAudGUI(unittest.TestCase):
         win._on_notify_state_set(win.notify_switch, False)
         self.assertFalse(get_notifications_enabled())
 
-        # 10. Visual EQ preset buttons, Cairo graph draw, and Sub-Nav bar
+        # 10. Visual EQ preset buttons, STANDARD | E-SPORT header toggle, 24-Bit Stereo | DSP Engine toggle
         win._eq_preset_buttons["music"].set_active(True)
         self.assertEqual(win.eq_combo_row.get_selected(), win.preset_keys.index("music"))
+        self.assertTrue(win.eq_mode_standard_btn.get_active())
+
+        # Clicking E-SPORT in the AUDIO-EQUALIZER header selects esports preset
+        win.eq_mode_esport_btn.set_active(True)
+        self.assertEqual(win.eq_combo_row.get_selected(), win.preset_keys.index("esports"))
+        self.assertTrue(win._eq_preset_buttons["esports"].get_active())
+
+        # Clicking STANDARD switches back to previous standard preset (music)
+        win.eq_mode_standard_btn.set_active(True)
+        self.assertEqual(win.eq_combo_row.get_selected(), win.preset_keys.index("music"))
+
+        # Clicking 24-BIT STEREO DAC vs RAZER AUDIO DSP ENGINE under headset
+        win.mode_stereo_btn.set_active(True)
+        self.assertFalse(win._dsp_engine_enabled)
+        win.mode_dsp_btn.set_active(True)
+        self.assertTrue(win._dsp_engine_enabled)
+
         win._on_eq_reset_clicked(win.eq_reset_btn)
         self.assertEqual(win.eq_combo_row.get_selected(), win.preset_keys.index("flat"))
 
